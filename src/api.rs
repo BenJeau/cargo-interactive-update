@@ -34,7 +34,7 @@ impl CratesIoResponse {
                 .and_then(|s| s.as_str())
                 .map(|s| s.to_string()),
             current_version_date: versions.and_then(|v| {
-                v.into_iter()
+                v.iter()
                     .find(|v| v["num"].as_str().unwrap_or("") == version)
                     .and_then(|v| v["updated_at"].as_str())
                     .map(|s| s.to_string())

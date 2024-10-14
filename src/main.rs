@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.render()?;
 
         match state.handle_keyboard_event()? {
-            cli::Event::HandleKeyboardEvent => {}
+            cli::Event::HandleKeyboard => {}
             cli::Event::UpdateDependencies => {
                 state.selected_dependencies().apply_versions()?;
                 break;

@@ -19,7 +19,7 @@ pub struct State {
 }
 
 pub enum Event {
-    HandleKeyboardEvent,
+    HandleKeyboard,
     UpdateDependencies,
     Exit,
 }
@@ -104,7 +104,7 @@ impl State {
             }
         }
 
-        Ok(Event::HandleKeyboardEvent)
+        Ok(Event::HandleKeyboard)
     }
 
     pub fn selected_dependencies(self) -> Dependencies {
@@ -156,7 +156,7 @@ impl State {
         )?;
 
         for (i, dependency) in self.outdated_deps.clone().iter().enumerate() {
-            self.render_dependency(i, &dependency)?;
+            self.render_dependency(i, dependency)?;
         }
 
         if self.outdated_deps.is_empty() {

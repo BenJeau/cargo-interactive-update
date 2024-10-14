@@ -64,8 +64,7 @@ impl CargoDependencies {
         Dependencies::new(
             threads
                 .into_iter()
-                .map(|t| t.join().unwrap())
-                .flatten()
+                .filter_map(|t| t.join().unwrap())
                 .collect(),
         )
     }
@@ -82,11 +81,7 @@ fn read_cargo_file() -> (Value, Option<Value>) {
     let cargo_toml: Value =
         basic_toml::from_str(&cargo_toml_content).expect("Unable to parse Cargo.toml file as TOML");
 
-    let workspace_toml = if let Some(workspace) = cargo_toml.get("workspace") {
-        Some(workspace.clone())
-    } else {
-        None
-    };
+    let workspace_toml = cargo_toml.get("workspace").cloned();
 
     (cargo_toml, workspace_toml)
 }
