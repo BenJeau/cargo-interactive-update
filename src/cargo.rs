@@ -1,6 +1,5 @@
 use semver::Version;
 use serde_json::Value;
-use std::fs;
 
 use crate::{
     api,
@@ -78,7 +77,7 @@ impl CargoDependencies {
 
 fn read_cargo_file() -> (Value, Option<Value>) {
     let cargo_toml_content =
-        fs::read_to_string("Cargo.toml").expect("Unable to read Cargo.toml file");
+        std::fs::read_to_string("Cargo.toml").expect("Unable to read Cargo.toml file");
 
     let cargo_toml: Value =
         basic_toml::from_str(&cargo_toml_content).expect("Unable to parse Cargo.toml file as TOML");

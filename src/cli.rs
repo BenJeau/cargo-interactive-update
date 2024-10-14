@@ -2,10 +2,7 @@ use crossterm::{
     cursor::{Hide, MoveTo, MoveToNextLine, Show},
     event::{self, KeyCode},
     execute,
-    style::{
-        Attribute, Color, Print, PrintStyledContent, ResetColor, SetAttribute, SetForegroundColor,
-        Stylize,
-    },
+    style::{Print, PrintStyledContent, ResetColor, Stylize},
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
 use std::io::{stdout, Write};
@@ -110,6 +107,17 @@ impl State {
         Ok(Event::HandleKeyboardEvent)
     }
 
+    pub fn selected_dependencies(self) -> Dependencies {
+        Dependencies::new(
+            self.outdated_deps
+                .into_iter()
+                .zip(self.selected.iter())
+                .filter(|(_, s)| **s)
+                .map(|(d, _)| d)
+                .collect(),
+        )
+    }
+
     pub fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.render_header()?;
         self.render_dependencies()?;
@@ -193,67 +201,54 @@ impl State {
             ..
         }: &Dependency,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let bullet = if self.selected[i] { "●" } else { "○" };
-        let color = if i == self.cursor_location {
-            Color::Green
-        } else {
-            Color::Black
-        };
-
-        let latest_version_date = convert_string_datetime(latest_version_date.as_deref())
-            .unwrap_or("none")
-            .italic()
-            .dim();
-        let current_version_date = convert_string_datetime(current_version_date.as_deref())
-            .unwrap_or("none")
-            .italic()
-            .dim();
         let name_spacing = " ".repeat(self.longest_attributes.name - name.len());
         let current_version_spacing =
             " ".repeat(self.longest_attributes.current_version - current_version.len());
         let latest_version_spacing =
             " ".repeat(self.longest_attributes.latest_version - latest_version.len());
+
+        let bullet = if self.selected[i] { "●" } else { "○" };
+
+        let latest_version_date = get_date_from_datetime_string(latest_version_date.as_deref())
+            .unwrap_or("none")
+            .italic()
+            .dim();
+        let current_version_date = get_date_from_datetime_string(current_version_date.as_deref())
+            .unwrap_or("none")
+            .italic()
+            .dim();
+
         let name = name.clone().bold();
-        let test = format!(
-            "{bullet} {name}{name_spacing}  {current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  ",
+        let repository = repository.as_deref().unwrap_or("none").underline_black();
+        let description = description
+            .as_deref()
+            .unwrap_or("")
+            .chars()
+            .take(60)
+            .collect::<String>()
+            .dim();
+
+        let row = format!(
+            "{bullet} {name}{name_spacing}  {current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  {repository} - {description}",
         );
+
+        let colored_row = if i == self.cursor_location {
+            row.green()
+        } else {
+            row.black()
+        };
+
         execute!(
             self.stdout,
-            SetForegroundColor(color),
-            Print(test),
-            SetAttribute(Attribute::Underlined),
-            Print(repository.as_deref().unwrap_or("none")),
-            SetAttribute(Attribute::NoUnderline),
-            Print(" - "),
-            SetAttribute(Attribute::Dim),
-            Print(
-                description
-                    .as_deref()
-                    .unwrap_or("")
-                    .chars()
-                    .take(60)
-                    .collect::<String>()
-            ),
-            SetAttribute(Attribute::Reset),
+            PrintStyledContent(colored_row),
             MoveToNextLine(1),
         )?;
         Ok(())
     }
-
-    pub fn selected_dependencies(self) -> Dependencies {
-        Dependencies::new(
-            self.outdated_deps
-                .into_iter()
-                .zip(self.selected.iter())
-                .filter(|(_, s)| **s)
-                .map(|(d, _)| d)
-                .collect(),
-        )
-    }
 }
 
-fn convert_string_datetime(date_string: Option<&str>) -> Option<&str> {
-    date_string
+fn get_date_from_datetime_string(datetime_string: Option<&str>) -> Option<&str> {
+    datetime_string
         .and_then(|s| s.split_once('T'))
         .map(|(date, _)| date)
 }
