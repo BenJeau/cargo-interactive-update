@@ -1,0 +1,196 @@
+name: Build and release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        type: choice
+        description: Bump version
+        options:
+          - major
+          - minor
+          - patch
+        default: patch
+        required: true
+      dry-run:
+        type: boolean
+        description: Dry run
+        default: false
+        required: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Rust setup
+        run: rustup toolchain install stable --profile minimal
+      - name: Setup cache
+        uses: actions/cache@v4
+        with:
+          save-always: true
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Add clippy to the toolchain
+        run: rustup component add clippy
+      - name: Run cargo clippy
+        run: cargo clippy -- -D warnings
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Rust setup
+        run: rustup toolchain install stable --profile minimal
+      - name: Add rustfmt to the toolchain
+        run: rustup component add rustfmt
+      - name: Run cargo format
+        run: cargo fmt --all -- --check
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Rust setup
+        run: rustup toolchain install stable --profile minimal
+      - name: Setup cache
+        uses: actions/cache@v4
+        with:
+          save-always: true
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run cargo test
+        run: cargo test --all -- --nocapture
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Rust setup
+        run: rustup toolchain install stable --profile minimal
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run cargo audit
+        run: cargo audit
+
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Rust setup
+        run: rustup toolchain install stable --profile minimal
+      - name: Setup cache
+        uses: actions/cache@v4
+        with:
+          save-always: true
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run cargo check
+        run: cargo check
+
+  prepare-release:
+    needs: [lint, format, test, audit, check]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump-version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Get latest tag
+        id: get-latest-tag
+        run: |
+          echo "latest_tag=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
+      - name: Bump version
+        id: bump-version
+        run: |
+          if [ "${{ inputs.bump }}" = "major" ]; then
+            echo "version=$(echo ${{ steps.get-latest-tag.outputs.latest_tag }} | awk -F. '{print ($1 + 1) ".0.0"}')" >> $GITHUB_OUTPUT
+          elif [ "${{ inputs.bump }}" = "minor" ]; then
+            echo "version=$(echo ${{ steps.get-latest-tag.outputs.latest_tag }} | awk -F. '{print $1 "." ($2 + 1) ".0"}')" >> $GITHUB_OUTPUT
+          elif [ "${{ inputs.bump }}" = "patch" ]; then
+            echo "version=$(echo ${{ steps.get-latest-tag.outputs.latest_tag }} | awk -F. '{print $1 "." $2 "." ($3 + 1)}')" >> $GITHUB_OUTPUT
+          fi
+      - name: Rust setup
+        run: rustup toolchain install stable --profile minimal
+      - name: Setup cache
+        uses: actions/cache@v4
+        with:
+          save-always: true
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Update Cargo.toml version
+        run: |
+          sed -i -e 's/^version = .*/version = "${{ steps.bump-version.outputs.version }}"/' Cargo.toml
+          cargo check
+      - name: Commit changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: bump version to ${{ steps.bump-version.outputs.version }}"
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            echo "dry-run"
+          else
+            git push
+          fi
+      - name: Create and push tagged commit with version
+        run: |
+          git tag ${{ steps.bump-version.outputs.version }}
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            echo "dry-run"
+          else
+            git push origin ${{ steps.bump-version.outputs.version }}
+          fi
+
+  build-and-release-crates:
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.version }}
+      - name: Rust setup
+        run: rustup toolchain install stable --profile minimal
+      - name: Setup cache
+        uses: actions/cache@v4
+        with:
+          save-always: true
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Publish to crates.io
+        run: cargo publish --token ${{ secrets.CARGO_TOKEN }} ${{ inputs.dry-run && '--dry-run' || '' }}
