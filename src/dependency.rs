@@ -1,3 +1,5 @@
+use crossterm::style::Stylize;
+
 #[derive(Clone)]
 pub struct Dependency {
     pub name: String,
@@ -24,14 +26,15 @@ impl Dependencies {
             .map(|d| format!("{}@{}", d.name, d.latest_version))
             .collect::<Vec<_>>();
 
-        println!("\n\nRunning `cargo add {}` ...", deps_to_update.join(" "));
+        let stylized_command = format!("cargo add {}", deps_to_update.join(" ").cyan()).bold();
+        println!("\n\nRunning {stylized_command} ...\n");
 
         std::process::Command::new("cargo")
             .arg("add")
             .args(deps_to_update)
             .status()?;
 
-        println!("Dependencies have been updated!");
+        println!("\nDependencies have been updated!");
 
         Ok(())
     }
