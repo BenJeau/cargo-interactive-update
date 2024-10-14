@@ -1,5 +1,8 @@
 # cargo-interactive-update
 
+[![Build status](https://github.com/BenJeau/cargo-interactive-update/actions/workflows/release.yaml/badge.svg)](https://github.com/BenJeau/cargo-interactive-update/actions/workflows/release.yaml)
+[![Crates.io Version](https://img.shields.io/crates/v/cargo-interactive-update.svg)](https://crates.io/crates/cargo-interactive-update)
+
 Update your direct dependencies interactively to the latest version via crates.io
 
 ## Installation
@@ -18,7 +21,9 @@ Run the cargo extension:
 cargo interactive-update
 ```
 
-It will then parse the `Cargo.toml` file to get the direct dependencies and check them via crates.io.
+It will then parse the `Cargo.toml` file to get the direct dependencies and check them via the crates.io API.
+
+It extracts dependencies from `dependencies` and `workspace.dependencies` sections.
 
 If there are outdated dependencies, it will display them and let you select which ones to update, similar to the following:
 
@@ -35,7 +40,7 @@ Dependencies (1 selected):
 Use arrow keys to navigate, <a> to select all, <i> to invert, <space> to select/deselect, <enter> to update, <esc>/<q> to exit
 ```
 
-After selecting the dependencies to update, it will run `cargo add` to update the dependencies.
+After selecting the dependencies to update, it will run `cargo add` with the selected dependencies and versions.
 
 ## License
 
