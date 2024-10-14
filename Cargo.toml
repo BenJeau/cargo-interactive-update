@@ -2,6 +2,12 @@
 edition = "2021"
 name = "cargo-interactive-update"
 version = "0.1.0"
+authors = ["Benoît Jeaurond <benoit@jeaurond.dev>"]
+description = "A cargo extension CLI tool to update your cargo direct dependencies interactively to the latest version"
+repository = "https://github.com/benjeau/cargo-interactive-update"
+license = "MIT"
+keywords = ["cargo", "update", "interactive"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 basic-toml = "0.1.9"
