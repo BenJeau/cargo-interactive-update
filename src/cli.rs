@@ -7,7 +7,7 @@ use crossterm::{
 };
 use std::io::{stdout, Write};
 
-use crate::dependency::{Dependencies, Dependency};
+use crate::dependency::{Dependencies, Dependency, DependencyKind};
 
 pub struct State {
     stdout: std::io::Stdout,
@@ -143,37 +143,56 @@ impl State {
     }
 
     fn render_dependencies(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        execute!(
-            self.stdout,
-            PrintStyledContent(
-                format!(
-                    "Dependencies ({} selected):",
-                    self.selected.iter().filter(|s| **s).count()
-                )
-                .cyan()
-            ),
-            MoveToNextLine(1)
-        )?;
+        let mut offset = 0;
 
-        for (i, dependency) in self.outdated_deps.clone().iter().enumerate() {
-            self.render_dependency(i, dependency)?;
-        }
-
-        if self.outdated_deps.is_empty() {
-            execute!(
-                self.stdout,
-                PrintStyledContent("No dependencies found".dim()),
-                MoveToNextLine(1),
-            )?;
+        for kind in DependencyKind::ordered() {
+            offset += self.render_dependencies_subsection(kind, offset)?;
         }
 
         Ok(())
     }
 
+    fn render_dependencies_subsection(
+        &mut self,
+        kind: DependencyKind,
+        offset: usize,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let deps = self
+            .outdated_deps
+            .iter()
+            .filter(|dep| dep.kind == kind)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if deps.is_empty() {
+            return Ok(0);
+        }
+
+        let title = get_dependencies_subsection_title(kind);
+        let num_selected = self
+            .selected
+            .iter()
+            .zip(self.outdated_deps.iter())
+            .filter(|(selected, dep)| **selected && dep.kind == kind)
+            .count();
+
+        execute!(
+            self.stdout,
+            PrintStyledContent(format!("{title} ({num_selected} selected):").cyan()),
+            MoveToNextLine(1)
+        )?;
+
+        for (i, dependency) in deps.iter().enumerate() {
+            self.render_dependency(i + offset, dependency)?;
+        }
+
+        Ok(deps.len())
+    }
+
     fn render_footer_actions(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         execute!(
             self.stdout,
-            MoveToNextLine(2),
+            MoveToNextLine(1),
             Print(format!(
                 "Use {} to navigate, {} to select all, {} to invert, {} to select/deselect, {} to update, {}/{} to exit",
                 "arrow keys".cyan(),
@@ -241,7 +260,7 @@ impl State {
         execute!(
             self.stdout,
             PrintStyledContent(colored_row),
-            MoveToNextLine(1),
+            MoveToNextLine(2),
         )?;
         Ok(())
     }
@@ -251,4 +270,13 @@ fn get_date_from_datetime_string(datetime_string: Option<&str>) -> Option<&str> 
     datetime_string
         .and_then(|s| s.split_once('T'))
         .map(|(date, _)| date)
+}
+
+fn get_dependencies_subsection_title(kind: DependencyKind) -> &'static str {
+    match kind {
+        DependencyKind::Normal => "Dependencies",
+        DependencyKind::Dev => "Dev dependencies",
+        DependencyKind::Build => "Build dependencies",
+        DependencyKind::Workspace => "Workspace dependencies",
+    }
 }

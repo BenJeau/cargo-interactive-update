@@ -3,13 +3,32 @@ use serde_json::Value;
 
 use crate::{
     api,
-    dependency::{Dependencies, Dependency},
+    dependency::{Dependencies, Dependency, DependencyKind},
 };
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct CargoDependency {
     pub name: String,
     pub version: String,
+    pub kind: DependencyKind,
+}
+
+impl Ord for CargoDependency {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let ordering = self.kind.cmp(&other.kind);
+
+        if ordering == std::cmp::Ordering::Equal {
+            self.name.cmp(&other.name)
+        } else {
+            ordering
+        }
+    }
+}
+
+impl PartialOrd for CargoDependency {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl CargoDependency {
@@ -30,6 +49,7 @@ impl CargoDependency {
                 latest_version_date: response.latest_version_date,
                 current_version_date: response.current_version_date,
                 description: response.description,
+                kind: self.kind,
             })
         } else {
             None
@@ -41,14 +61,10 @@ pub struct CargoDependencies(Vec<CargoDependency>);
 
 impl CargoDependencies {
     pub fn gather_dependencies() -> Self {
-        let (cargo_toml, workspace_toml) = read_cargo_file();
-
-        let mut cargo_toml_deps = get_cargo_toml_dependencies(Some(cargo_toml));
-        let mut workspace_toml_deps = get_cargo_toml_dependencies(workspace_toml);
-
-        cargo_toml_deps.append(&mut workspace_toml_deps);
-
-        Self(cargo_toml_deps)
+        let cargo_toml = read_cargo_file();
+        let mut dependencies = get_cargo_dependencies(cargo_toml);
+        dependencies.sort();
+        Self(dependencies)
     }
 
     pub fn retrieve_outdated_dependencies(&self) -> Dependencies {
@@ -64,7 +80,8 @@ impl CargoDependencies {
         Dependencies::new(
             threads
                 .into_iter()
-                .filter_map(|t| t.join().unwrap())
+                .flat_map(|t| t.join())
+                .flatten()
                 .collect(),
         )
     }
@@ -74,39 +91,66 @@ impl CargoDependencies {
     }
 }
 
-fn read_cargo_file() -> (Value, Option<Value>) {
+fn read_cargo_file() -> Value {
     let cargo_toml_content =
         std::fs::read_to_string("Cargo.toml").expect("Unable to read Cargo.toml file");
 
-    let cargo_toml: Value =
-        basic_toml::from_str(&cargo_toml_content).expect("Unable to parse Cargo.toml file as TOML");
-
-    let workspace_toml = cargo_toml.get("workspace").cloned();
-
-    (cargo_toml, workspace_toml)
+    basic_toml::from_str(&cargo_toml_content).expect("Unable to parse Cargo.toml file as TOML")
 }
 
-fn get_cargo_toml_dependencies(cargo_toml: Option<Value>) -> Vec<CargoDependency> {
+fn get_cargo_dependencies(cargo_toml: Value) -> Vec<CargoDependency> {
+    let dependencies =
+        extract_dependencies_from_sections(cargo_toml.get("dependencies"), DependencyKind::Normal);
+
+    let dev_dependencies =
+        extract_dependencies_from_sections(cargo_toml.get("dev-dependencies"), DependencyKind::Dev);
+
+    let build_dependencies = extract_dependencies_from_sections(
+        cargo_toml.get("build-dependencies"),
+        DependencyKind::Build,
+    );
+
+    let workspace_dependencies = extract_dependencies_from_sections(
+        cargo_toml
+            .get("workspace")
+            .and_then(|w| w.get("dependencies")),
+        DependencyKind::Workspace,
+    );
+
+    dependencies
+        .into_iter()
+        .chain(dev_dependencies)
+        .chain(build_dependencies)
+        .chain(workspace_dependencies)
+        .collect()
+}
+
+fn extract_dependencies_from_sections(
+    cargo_toml: Option<&Value>,
+    kind: DependencyKind,
+) -> Vec<CargoDependency> {
     let Some(cargo_toml) = cargo_toml else {
         return vec![];
     };
 
-    let Some(package_deps) = cargo_toml.get("dependencies").and_then(|d| d.as_object()) else {
+    let Some(package_deps) = cargo_toml.as_object() else {
         return vec![];
     };
 
     package_deps
         .iter()
-        .map(|(name, package_data)| CargoDependency {
-            name: name.to_string(),
-            version: match package_data {
+        .flat_map(|(name, package_data)| {
+            let version = match package_data {
                 Value::String(v) => v.clone(),
-                Value::Object(o) => o
-                    .get("version")
-                    .and_then(|v| v.as_str().map(|s| s.to_string()))
-                    .unwrap_or_else(|| panic!("Unexpected value type")),
-                _ => panic!("Unexpected value type"),
-            },
+                Value::Object(o) => o.get("version")?.as_str()?.to_string(),
+                _ => return None,
+            };
+
+            Some(CargoDependency {
+                name: name.to_string(),
+                version,
+                kind,
+            })
         })
         .collect()
 }

@@ -14,10 +14,7 @@ fn get_string_from_value(
     value: Option<&serde_json::Map<String, serde_json::Value>>,
     key: &str,
 ) -> Option<String> {
-    value
-        .and_then(|d| d.get(key))
-        .and_then(|s| s.as_str())
-        .map(|s| s.trim().to_string())
+    Some(value?.get(key)?.as_str()?.trim().to_string())
 }
 
 fn get_field_from_versions(
@@ -25,13 +22,15 @@ fn get_field_from_versions(
     version: &str,
     key: &str,
 ) -> Option<String> {
-    versions.and_then(|v| {
-        v.iter()
-            .find(|v| v.get("num").and_then(|v| v.as_str()).unwrap_or("") == version)
-            .and_then(|v| v.get(key))
-            .and_then(|s| s.as_str())
-            .map(|s| s.trim().to_string())
-    })
+    Some(
+        versions?
+            .iter()
+            .find(|v| v.get("num").and_then(|v| v.as_str()).unwrap_or("") == version)?
+            .get(key)?
+            .as_str()?
+            .trim()
+            .to_string(),
+    )
 }
 
 impl CratesIoResponse {
@@ -53,7 +52,7 @@ impl CratesIoResponse {
 }
 
 pub fn get_latest_version(
-    CargoDependency { name, version }: &CargoDependency,
+    CargoDependency { name, version, .. }: &CargoDependency,
 ) -> Result<CratesIoResponse, Box<dyn std::error::Error>> {
     let mut headers = List::new();
 

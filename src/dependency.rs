@@ -9,6 +9,32 @@ pub struct Dependency {
     pub description: Option<String>,
     pub latest_version_date: Option<String>,
     pub current_version_date: Option<String>,
+    pub kind: DependencyKind,
+}
+
+impl Dependency {
+    fn versioned_name(&self) -> String {
+        format!("{}@{}", self.name, self.latest_version)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DependencyKind {
+    Normal,
+    Dev,
+    Build,
+    Workspace,
+}
+
+impl DependencyKind {
+    pub const fn ordered() -> [DependencyKind; 4] {
+        [
+            DependencyKind::Normal,
+            DependencyKind::Dev,
+            DependencyKind::Build,
+            DependencyKind::Workspace,
+        ]
+    }
 }
 
 #[derive(Clone)]
@@ -19,36 +45,56 @@ impl Dependencies {
         Self(dependencies)
     }
 
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Dependency> {
+        self.0.iter()
+    }
+
     pub fn apply_versions(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let deps_to_update = self
-            .0
-            .iter()
-            .map(|d| format!("{}@{}", d.name, d.latest_version))
-            .collect::<Vec<_>>();
+        println!();
 
-        let stylized_command = format!("cargo add {}", deps_to_update.join(" ").cyan()).bold();
-        println!("\n\nRunning {stylized_command} ...\n");
-
-        std::process::Command::new("cargo")
-            .arg("add")
-            .args(deps_to_update)
-            .status()?;
+        for kind in DependencyKind::ordered() {
+            self.apply_versions_by_kind(kind)?;
+        }
 
         println!("\nDependencies have been updated!");
 
         Ok(())
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
+    fn apply_versions_by_kind(
+        &self,
+        kind: DependencyKind,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut args = self
+            .0
+            .iter()
+            .filter(|d| d.kind == kind)
+            .map(Dependency::versioned_name)
+            .collect::<Vec<_>>();
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
+        if args.is_empty() {
+            return Ok(());
+        }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, Dependency> {
-        self.0.iter()
+        match kind {
+            DependencyKind::Dev => args.insert(0, "--dev".to_string()),
+            DependencyKind::Build => args.insert(0, "--build".to_string()),
+            _ => {}
+        };
+
+        let stylized_command = format!("cargo add {}", args.join(" ").cyan()).bold();
+        println!("\nExecuting {stylized_command} ...");
+
+        std::process::Command::new("cargo")
+            .arg("add")
+            .args(args)
+            .status()?;
+
+        Ok(())
     }
 }
 
