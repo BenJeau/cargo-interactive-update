@@ -1,6 +1,6 @@
 use crossterm::{
     cursor::{Hide, MoveTo, MoveToNextLine, Show},
-    event::{self, KeyCode},
+    event::{self, KeyCode, KeyModifiers},
     execute,
     style::{Print, PrintStyledContent, ResetColor, Stylize},
     terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
@@ -70,34 +70,33 @@ impl State {
 
     pub fn handle_keyboard_event(&mut self) -> Result<Event, Box<dyn std::error::Error>> {
         if let event::Event::Key(key) = event::read()? {
-            match key.code {
-                KeyCode::Up | KeyCode::Left => {
+            match (key.code, key.modifiers) {
+                (KeyCode::Up | KeyCode::Left, _) => {
                     self.cursor_location = if self.cursor_location == 0 {
                         self.outdated_deps.len() - 1
                     } else {
                         self.cursor_location - 1
                     };
                 }
-                KeyCode::Down | KeyCode::Right => {
+                (KeyCode::Down | KeyCode::Right, _) => {
                     self.cursor_location = (self.cursor_location + 1) % self.outdated_deps.len();
                 }
-                KeyCode::Char(' ') => {
+                (KeyCode::Char(' '), _) => {
                     self.selected[self.cursor_location] = !self.selected[self.cursor_location];
                 }
-                KeyCode::Enter => {
-                    execute!(self.stdout, Show, ResetColor)?;
-                    disable_raw_mode()?;
+                (KeyCode::Enter, _) => {
+                    self.reset_terminal()?;
                     return Ok(Event::UpdateDependencies);
                 }
-                KeyCode::Char('a') => {
+                (KeyCode::Char('a'), _) => {
                     self.selected = vec![true; self.outdated_deps.len()];
                 }
-                KeyCode::Char('i') => {
+                (KeyCode::Char('i'), _) => {
                     self.selected = self.selected.iter().map(|s| !s).collect();
                 }
-                KeyCode::Esc | KeyCode::Char('q') => {
-                    execute!(self.stdout, Show, ResetColor)?;
-                    disable_raw_mode()?;
+                (KeyCode::Esc | KeyCode::Char('q'), _)
+                | (KeyCode::Char('c') | KeyCode::Char('z'), KeyModifiers::CONTROL) => {
+                    self.reset_terminal()?;
                     return Ok(Event::Exit);
                 }
                 _ => {}
@@ -105,6 +104,12 @@ impl State {
         }
 
         Ok(Event::HandleKeyboard)
+    }
+
+    fn reset_terminal(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        execute!(self.stdout, Show, ResetColor)?;
+        disable_raw_mode()?;
+        Ok(())
     }
 
     pub fn selected_dependencies(self) -> Dependencies {
@@ -192,7 +197,7 @@ impl State {
     fn render_footer_actions(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         execute!(
             self.stdout,
-            MoveToNextLine(1),
+            MoveToNextLine(2),
             Print(format!(
                 "Use {} to navigate, {} to select all, {} to invert, {} to select/deselect, {} to update, {}/{} to exit\n",
                 "arrow keys".cyan(),
@@ -260,7 +265,7 @@ impl State {
         execute!(
             self.stdout,
             PrintStyledContent(colored_row),
-            MoveToNextLine(2),
+            MoveToNextLine(1),
         )?;
         Ok(())
     }
