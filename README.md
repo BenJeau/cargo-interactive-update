@@ -39,7 +39,7 @@ Dependencies (1 selected):
 Dev dependencies (1 selected):
 ● assert_cmd   2023-04-13 2.0.11  -> 2024-08-09 2.0.16   https://github.com/assert-rs/assert_cmd.git - Test CLI Applications.
 
-Build dependencies (1 selected):
+Build dependencies (0 selected):
 ○ tonic-build  2022-11-29 0.8.3   -> 2024-09-26 0.12.3   https://github.com/hyperium/tonic - Codegen module of `tonic` gRPC implementation.
 
 Workspace dependencies (1 selected):
