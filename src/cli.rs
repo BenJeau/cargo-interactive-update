@@ -51,10 +51,10 @@ impl Longest {
 }
 
 impl State {
-    pub fn new(outdated_deps: Dependencies, total_deps: usize) -> Self {
+    pub fn new(outdated_deps: Dependencies, total_deps: usize, default_selected: bool) -> Self {
         Self {
             stdout: stdout(),
-            selected: vec![false; outdated_deps.len()],
+            selected: vec![default_selected; outdated_deps.len()],
             cursor_location: 0,
             longest_attributes: Longest::get_longest_attributes(&outdated_deps),
             outdated_deps,
@@ -133,7 +133,7 @@ impl State {
             Clear(ClearType::All),
             MoveTo(0, 0),
             Print(format!(
-                "{} out of the {} direct dependencies are outdated",
+                "{} out of the {} direct dependencies are outdated.",
                 self.outdated_deps.len().to_string().bold(),
                 self.total_deps.to_string().bold()
             )),
@@ -194,7 +194,7 @@ impl State {
             self.stdout,
             MoveToNextLine(1),
             Print(format!(
-                "Use {} to navigate, {} to select all, {} to invert, {} to select/deselect, {} to update, {}/{} to exit",
+                "Use {} to navigate, {} to select all, {} to invert, {} to select/deselect, {} to update, {}/{} to exit\n",
                 "arrow keys".cyan(),
                 "<a>".cyan(),
                 "<i>".cyan(),

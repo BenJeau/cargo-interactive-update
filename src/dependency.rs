@@ -54,13 +54,18 @@ impl Dependencies {
     }
 
     pub fn apply_versions(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.0.is_empty() {
+            println!("No dependencies have been updated.");
+            return Ok(());
+        }
+
         println!();
 
         for kind in DependencyKind::ordered() {
             self.apply_versions_by_kind(kind)?;
         }
 
-        println!("\nDependencies have been updated!");
+        println!("\nDependencies have been updated.");
 
         Ok(())
     }
@@ -87,7 +92,7 @@ impl Dependencies {
         };
 
         let stylized_command = format!("cargo add {}", args.join(" ").cyan()).bold();
-        println!("\nExecuting {stylized_command} ...");
+        println!("Executing {stylized_command} ...");
 
         std::process::Command::new("cargo")
             .arg("add")

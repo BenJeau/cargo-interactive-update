@@ -1,9 +1,14 @@
+use clap::Parser;
+
 mod api;
+mod args;
 mod cargo;
 mod cli;
 mod dependency;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args::CargoCli::InteractiveUpdate(args) = args::CargoCli::parse();
+
     let dependencies = cargo::CargoDependencies::gather_dependencies();
     let outdated_deps = dependencies.retrieve_outdated_dependencies();
 
@@ -15,7 +20,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let mut state = cli::State::new(outdated_deps, total_deps);
+    println!("{total_outdated_deps} out of the {total_deps} direct dependencies are outdated.");
+
+    let mut state = cli::State::new(outdated_deps, total_deps, args.all);
+
+    if args.yes {
+        state.selected_dependencies().apply_versions()?;
+        return Ok(());
+    }
+
     state.start()?;
 
     loop {

@@ -51,6 +51,23 @@ Use arrow keys to navigate, <a> to select all, <i> to invert, <space> to select/
 
 After selecting the dependencies to update, it will run `cargo add` with the selected dependencies and versions.
 
+## Arguments
+
+- `-a` or `--all`: Selects all dependencies to be updated
+- `-y` or `--yes`: Execute without asking for confirmation
+
+For example, if you want to update all dependencies without asking for confirmation, you can run:
+
+```bash
+cargo interactive-update -ay
+```
+
+or using the long form:
+
+```bash
+cargo interactive-update --all --yes
+```
+
 ## License
 
 This project is licensed under the MIT license.
