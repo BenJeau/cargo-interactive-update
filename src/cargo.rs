@@ -1,5 +1,5 @@
 use semver::Version;
-use serde_json::Value;
+use toml_edit::{DocumentMut, Item, Value};
 
 use crate::{
     api,
@@ -57,20 +57,26 @@ impl CargoDependency {
     }
 }
 
-pub struct CargoDependencies(Vec<CargoDependency>);
+pub struct CargoDependencies {
+    dependencies: Vec<CargoDependency>,
+    pub cargo_toml: DocumentMut,
+}
 
 impl CargoDependencies {
     pub fn gather_dependencies() -> Self {
         let cargo_toml = read_cargo_file();
-        let mut dependencies = get_cargo_dependencies(cargo_toml);
+        let mut dependencies = get_cargo_dependencies(&cargo_toml);
         dependencies.sort();
-        Self(dependencies)
+        Self {
+            dependencies,
+            cargo_toml,
+        }
     }
 
     pub fn retrieve_outdated_dependencies(&self) -> Dependencies {
         let mut threads = Vec::new();
 
-        for dependency in self.0.iter() {
+        for dependency in self.dependencies.iter() {
             let dependency = dependency.clone();
             threads.push(std::thread::spawn(move || {
                 dependency.get_latest_version_wrapper()
@@ -87,18 +93,20 @@ impl CargoDependencies {
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.dependencies.len()
     }
 }
 
-fn read_cargo_file() -> Value {
+fn read_cargo_file() -> DocumentMut {
     let cargo_toml_content =
         std::fs::read_to_string("Cargo.toml").expect("Unable to read Cargo.toml file");
 
-    basic_toml::from_str(&cargo_toml_content).expect("Unable to parse Cargo.toml file as TOML")
+    cargo_toml_content
+        .parse()
+        .expect("Unable to parse Cargo.toml file as TOML")
 }
 
-fn get_cargo_dependencies(cargo_toml: Value) -> Vec<CargoDependency> {
+fn get_cargo_dependencies(cargo_toml: &DocumentMut) -> Vec<CargoDependency> {
     let dependencies =
         extract_dependencies_from_sections(cargo_toml.get("dependencies"), DependencyKind::Normal);
 
@@ -126,14 +134,14 @@ fn get_cargo_dependencies(cargo_toml: Value) -> Vec<CargoDependency> {
 }
 
 fn extract_dependencies_from_sections(
-    cargo_toml: Option<&Value>,
+    cargo_toml: Option<&Item>,
     kind: DependencyKind,
 ) -> Vec<CargoDependency> {
     let Some(cargo_toml) = cargo_toml else {
         return vec![];
     };
 
-    let Some(package_deps) = cargo_toml.as_object() else {
+    let Some(package_deps) = cargo_toml.as_table_like() else {
         return vec![];
     };
 
@@ -141,8 +149,9 @@ fn extract_dependencies_from_sections(
         .iter()
         .flat_map(|(name, package_data)| {
             let version = match package_data {
-                Value::String(v) => v.clone(),
-                Value::Object(o) => o.get("version")?.as_str()?.to_string(),
+                Item::Value(Value::String(v)) => v.value().to_string(),
+                Item::Value(Value::InlineTable(t)) => t.get("version")?.as_str()?.to_string(),
+                Item::Table(t) => t.get("version")?.as_str()?.to_string(),
                 _ => return None,
             };
 

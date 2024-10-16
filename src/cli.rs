@@ -142,7 +142,7 @@ impl State {
                 self.outdated_deps.len().to_string().bold(),
                 self.total_deps.to_string().bold()
             )),
-            MoveToNextLine(2)
+            MoveToNextLine(1)
         )?;
         Ok(())
     }
@@ -183,6 +183,7 @@ impl State {
 
         execute!(
             self.stdout,
+            MoveToNextLine(1),
             PrintStyledContent(format!("{title} ({num_selected} selected):").cyan()),
             MoveToNextLine(1)
         )?;

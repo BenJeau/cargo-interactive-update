@@ -10,13 +10,13 @@ keywords = ["cargo", "update", "interactive"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-basic-toml = "0.1.9"
 clap = { version = "4.5.20", features = ["derive"] }
 clap-cargo = "0.14.1"
 crossterm = { version = "0.28.1", default-features = false, features = ["events"] }
 curl = "0.4.47"
 semver = "1.0.23"
 serde_json = "1.0.128"
+toml_edit = "0.22.22"
 
 [profile.release]
 lto = true
