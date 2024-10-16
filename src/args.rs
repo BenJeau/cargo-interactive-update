@@ -16,4 +16,8 @@ pub struct Args {
     /// Execute without asking for confirmation
     #[arg(short, long)]
     pub yes: bool,
+
+    /// Don't run `cargo check` after updating
+    #[arg(short, long)]
+    pub no_check: bool,
 }

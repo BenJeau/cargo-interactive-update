@@ -51,6 +51,7 @@ impl Dependencies {
     pub fn apply_versions(
         &self,
         mut cargo_toml: DocumentMut,
+        no_check: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.0.is_empty() {
             println!("No dependencies have been updated.");
@@ -64,11 +65,12 @@ impl Dependencies {
         }
 
         std::fs::write("Cargo.toml", cargo_toml.to_string())?;
+        println!("Dependencies have been updated in Cargo.toml.");
 
-        println!("Executing {} ...", "cargo check".bold());
-        std::process::Command::new("cargo").arg("check").status()?;
-
-        println!("\nDependencies have been updated.");
+        if !no_check {
+            println!("\nExecuting {}...", "cargo check".bold());
+            std::process::Command::new("cargo").arg("check").status()?;
+        }
 
         Ok(())
     }

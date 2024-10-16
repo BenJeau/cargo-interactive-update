@@ -55,6 +55,7 @@ After selecting the dependencies to update, it will run `cargo add` with the sel
 
 - `-a` or `--all`: Selects all dependencies to be updated
 - `-y` or `--yes`: Execute without asking for confirmation
+- `-n` or `--no-check`: Don't run `cargo check` after updating
 
 For example, if you want to update all dependencies without asking for confirmation, you can run:
 
