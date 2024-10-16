@@ -55,12 +55,12 @@ impl Dependencies {
         mut cargo_toml: DocumentMut,
         args: Args,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        println!("\n\n");
+
         if self.0.is_empty() {
             println!("No dependencies have been updated.");
             return Ok(());
         }
-
-        println!();
 
         for kind in DependencyKind::ordered() {
             self.apply_versions_by_kind(kind, &mut cargo_toml, args.pin);
@@ -85,9 +85,9 @@ impl Dependencies {
     ) {
         for dependency in self.0.iter().filter(|d| d.kind == kind) {
             let version = if pin {
-                value(&format!("={}", dependency.latest_version))
+                value(format!("={}", dependency.latest_version))
             } else {
-                value(&dependency.current_version)
+                value(&dependency.latest_version)
             };
 
             let section = match kind {

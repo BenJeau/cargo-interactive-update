@@ -3,7 +3,9 @@ use crossterm::{
     event::{self, KeyCode, KeyModifiers},
     execute,
     style::{Print, PrintStyledContent, ResetColor, Stylize},
-    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, Clear, ClearType, DisableLineWrap, EnableLineWrap,
+    },
 };
 use std::io::{stdout, Write};
 
@@ -150,9 +152,13 @@ impl State {
     fn render_dependencies(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut offset = 0;
 
+        execute!(self.stdout, DisableLineWrap)?;
+
         for kind in DependencyKind::ordered() {
             offset += self.render_dependencies_subsection(kind, offset)?;
         }
+
+        execute!(self.stdout, EnableLineWrap)?;
 
         Ok(())
     }
@@ -200,7 +206,7 @@ impl State {
             self.stdout,
             MoveToNextLine(2),
             Print(format!(
-                "Use {} to navigate, {} to select all, {} to invert, {} to select/deselect, {} to update, {}/{} to exit\n",
+                "Use {} to navigate, {} to select all, {} to invert, {} to select/deselect, {} to update, {}/{} to exit",
                 "arrow keys".cyan(),
                 "<a>".cyan(),
                 "<i>".cyan(),
@@ -245,13 +251,7 @@ impl State {
 
         let name = name.clone().bold();
         let repository = repository.as_deref().unwrap_or("none").underline_black();
-        let description = description
-            .as_deref()
-            .unwrap_or("")
-            .chars()
-            .take(60)
-            .collect::<String>()
-            .dim();
+        let description = description.as_deref().unwrap_or("").dim();
 
         let row = format!(
             "{bullet} {name}{name_spacing}  {current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  {repository} - {description}",
