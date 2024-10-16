@@ -20,4 +20,8 @@ pub struct Args {
     /// Don't run `cargo check` after updating
     #[arg(short, long)]
     pub no_check: bool,
+
+    /// Pin dependencies to exact versions, with an `=` prefix
+    #[arg(short, long)]
+    pub pin: bool,
 }
