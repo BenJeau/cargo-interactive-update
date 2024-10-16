@@ -25,7 +25,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut state = cli::State::new(outdated_deps, total_deps, args.all);
 
     if args.yes {
-        state.selected_dependencies().apply_versions()?;
+        state
+            .selected_dependencies()
+            .apply_versions(dependencies.cargo_toml)?;
         return Ok(());
     }
 
@@ -37,7 +39,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match state.handle_keyboard_event()? {
             cli::Event::HandleKeyboard => {}
             cli::Event::UpdateDependencies => {
-                state.selected_dependencies().apply_versions()?;
+                state
+                    .selected_dependencies()
+                    .apply_versions(dependencies.cargo_toml)?;
                 break;
             }
             cli::Event::Exit => {

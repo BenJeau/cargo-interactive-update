@@ -1,4 +1,5 @@
 use crossterm::style::Stylize;
+use toml_edit::{value, DocumentMut, Item, Value};
 
 #[derive(Clone)]
 pub struct Dependency {
@@ -10,12 +11,6 @@ pub struct Dependency {
     pub latest_version_date: Option<String>,
     pub current_version_date: Option<String>,
     pub kind: DependencyKind,
-}
-
-impl Dependency {
-    fn versioned_name(&self) -> String {
-        format!("{}@{}", self.name, self.latest_version)
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -53,7 +48,10 @@ impl Dependencies {
         self.0.iter()
     }
 
-    pub fn apply_versions(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn apply_versions(
+        &self,
+        mut cargo_toml: DocumentMut,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if self.0.is_empty() {
             println!("No dependencies have been updated.");
             return Ok(());
@@ -62,44 +60,37 @@ impl Dependencies {
         println!();
 
         for kind in DependencyKind::ordered() {
-            self.apply_versions_by_kind(kind)?;
+            self.apply_versions_by_kind(kind, &mut cargo_toml);
         }
+
+        std::fs::write("Cargo.toml", cargo_toml.to_string())?;
+
+        println!("Executing {} ...", "cargo check".bold());
+        std::process::Command::new("cargo").arg("check").status()?;
 
         println!("\nDependencies have been updated.");
 
         Ok(())
     }
 
-    fn apply_versions_by_kind(
-        &self,
-        kind: DependencyKind,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut args = self
-            .0
-            .iter()
-            .filter(|d| d.kind == kind)
-            .map(Dependency::versioned_name)
-            .collect::<Vec<_>>();
+    fn apply_versions_by_kind(&self, kind: DependencyKind, cargo_toml: &mut DocumentMut) {
+        for dependency in self.0.iter().filter(|d| d.kind == kind) {
+            let version = value(&dependency.latest_version);
 
-        if args.is_empty() {
-            return Ok(());
+            let section = match kind {
+                DependencyKind::Dev => cargo_toml.get_mut("dev-dependencies"),
+                DependencyKind::Build => cargo_toml.get_mut("build-dependencies"),
+                DependencyKind::Workspace => cargo_toml["workspace"].get_mut("dependencies"),
+                DependencyKind::Normal => cargo_toml.get_mut("dependencies"),
+            }
+            .unwrap();
+
+            if matches!(section[&dependency.name], Item::Value(Value::String(_))) {
+                section[&dependency.name] = version
+            } else {
+                section[&dependency.name]["version"] = version
+            }
         }
-
-        match kind {
-            DependencyKind::Dev => args.insert(0, "--dev".to_string()),
-            DependencyKind::Build => args.insert(0, "--build".to_string()),
-            _ => {}
-        };
-
-        let stylized_command = format!("cargo add {}", args.join(" ").cyan()).bold();
-        println!("Executing {stylized_command} ...");
-
-        std::process::Command::new("cargo")
-            .arg("add")
-            .args(args)
-            .status()?;
-
-        Ok(())
     }
 }
 
