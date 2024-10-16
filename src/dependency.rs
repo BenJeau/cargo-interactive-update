@@ -87,7 +87,7 @@ impl Dependencies {
             let version = if pin {
                 value(&format!("={}", dependency.latest_version))
             } else {
-                value(&dependency.current_version)
+                value(&dependency.latest_version)
             };
 
             let section = match kind {
