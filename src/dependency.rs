@@ -85,7 +85,7 @@ impl Dependencies {
     ) {
         for dependency in self.0.iter().filter(|d| d.kind == kind) {
             let version = if pin {
-                value(&format!("={}", dependency.latest_version))
+                value(format!("={}", dependency.latest_version))
             } else {
                 value(&dependency.latest_version)
             };
