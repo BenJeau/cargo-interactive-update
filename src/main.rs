@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.yes {
         state
             .selected_dependencies()
-            .apply_versions(dependencies.cargo_toml, args.no_check)?;
+            .apply_versions(dependencies.cargo_toml, args)?;
         return Ok(());
     }
 
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cli::Event::UpdateDependencies => {
                 state
                     .selected_dependencies()
-                    .apply_versions(dependencies.cargo_toml, args.no_check)?;
+                    .apply_versions(dependencies.cargo_toml, args)?;
                 break;
             }
             cli::Event::Exit => {

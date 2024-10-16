@@ -1,6 +1,8 @@
 use crossterm::style::Stylize;
 use toml_edit::{value, DocumentMut, Item, Value};
 
+use crate::args::Args;
+
 #[derive(Clone)]
 pub struct Dependency {
     pub name: String,
@@ -51,7 +53,7 @@ impl Dependencies {
     pub fn apply_versions(
         &self,
         mut cargo_toml: DocumentMut,
-        no_check: bool,
+        args: Args,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.0.is_empty() {
             println!("No dependencies have been updated.");
@@ -61,13 +63,13 @@ impl Dependencies {
         println!();
 
         for kind in DependencyKind::ordered() {
-            self.apply_versions_by_kind(kind, &mut cargo_toml);
+            self.apply_versions_by_kind(kind, &mut cargo_toml, args.pin);
         }
 
         std::fs::write("Cargo.toml", cargo_toml.to_string())?;
         println!("Dependencies have been updated in Cargo.toml.");
 
-        if !no_check {
+        if !args.no_check {
             println!("\nExecuting {}...", "cargo check".bold());
             std::process::Command::new("cargo").arg("check").status()?;
         }
@@ -75,9 +77,18 @@ impl Dependencies {
         Ok(())
     }
 
-    fn apply_versions_by_kind(&self, kind: DependencyKind, cargo_toml: &mut DocumentMut) {
+    fn apply_versions_by_kind(
+        &self,
+        kind: DependencyKind,
+        cargo_toml: &mut DocumentMut,
+        pin: bool,
+    ) {
         for dependency in self.0.iter().filter(|d| d.kind == kind) {
-            let version = value(&dependency.latest_version);
+            let version = if pin {
+                value(&format!("={}", dependency.latest_version))
+            } else {
+                value(&dependency.current_version)
+            };
 
             let section = match kind {
                 DependencyKind::Dev => cargo_toml.get_mut("dev-dependencies"),

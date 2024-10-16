@@ -16,7 +16,7 @@ crossterm = { version = "0.28.1", default-features = false, features = ["events"
 curl = "0.4.47"
 semver = "1.0.23"
 serde_json = "1.0.128"
-toml_edit = "0.22.22"
+toml_edit = "=0.22.22"
 
 [profile.release]
 lto = true
