@@ -200,7 +200,7 @@ impl State {
             self.stdout,
             MoveToNextLine(2),
             Print(format!(
-                "Use {} to navigate, {} to select all, {} to invert, {} to select/deselect, {} to update, {}/{} to exit\n",
+                "Use {} to navigate, {} to select all, {} to invert, {} to select/deselect, {} to update, {}/{} to exit",
                 "arrow keys".cyan(),
                 "<a>".cyan(),
                 "<i>".cyan(),
