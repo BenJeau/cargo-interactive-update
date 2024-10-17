@@ -3,7 +3,7 @@
 [![Build status](https://github.com/BenJeau/cargo-interactive-update/actions/workflows/release.yaml/badge.svg)](https://github.com/BenJeau/cargo-interactive-update/actions/workflows/release.yaml)
 [![Crates.io Version](https://img.shields.io/crates/v/cargo-interactive-update.svg)](https://crates.io/crates/cargo-interactive-update)
 
-Update your direct dependencies interactively to the latest version via crates.io
+Update your direct dependencies interactively to the latest version via crates.io, similar to `pnpm update --interactive --latest` from the JS ecosystem.
 
 ## Installation
 
@@ -49,7 +49,7 @@ Workspace dependencies (1 selected):
 Use arrow keys to navigate, <a> to select all, <i> to invert, <space> to select/deselect, <enter> to update, <esc>/<q> to exit
 ```
 
-After selecting the dependencies to update, it will run `cargo add` with the selected dependencies and versions.
+After selecting the dependencies to update, it will run update the `Cargo.toml` file and run `cargo check` if you haven't disabled it via the `--no-check` flag.
 
 ## Arguments
 
