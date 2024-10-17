@@ -19,7 +19,6 @@ fn get_string_from_value(
             .get(key)?
             .as_str()?
             .trim()
-            .to_string()
             .split('\n')
             .collect::<Vec<&str>>()
             .join(" "),
