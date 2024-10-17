@@ -14,7 +14,16 @@ fn get_string_from_value(
     value: Option<&serde_json::Map<String, serde_json::Value>>,
     key: &str,
 ) -> Option<String> {
-    Some(value?.get(key)?.as_str()?.trim().to_string())
+    Some(
+        value?
+            .get(key)?
+            .as_str()?
+            .trim()
+            .to_string()
+            .split('\n')
+            .collect::<Vec<&str>>()
+            .join(" "),
+    )
 }
 
 fn get_field_from_versions(
@@ -100,7 +109,7 @@ mod tests {
         let response = serde_json::json!({
             "crate": {
                 "repository": "\thttps://github.com/user/repo ",
-                "description": " A description\n ",
+                "description": " A\ndescription\n ",
                 "max_stable_version": "0.2.0",
             },
             "versions": [
