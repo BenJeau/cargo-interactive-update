@@ -379,8 +379,18 @@ impl State {
 
         let description = description.as_deref().unwrap_or("").dim();
 
+        let mut current_version = current_version.clone().bold().black();
+        if self.theme == Theme::Dark {
+            current_version = current_version.white();
+        }
+
+        let mut latest_version = latest_version.clone().bold().black();
+        if self.theme == Theme::Dark {
+            latest_version = latest_version.white();
+        }
+
         let row = format!(
-            "{bullet} {name}{name_spacing}  {current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  {repository} - {description}",
+            "{bullet} {name}{name_spacing}  {current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  {repository} - {description}"
         );
 
         let colored_row = if i == self.cursor_location {
