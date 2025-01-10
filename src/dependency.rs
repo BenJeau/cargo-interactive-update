@@ -15,7 +15,7 @@ pub struct Dependency {
     pub kind: DependencyKind,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DependencyKind {
     Normal,
     Dev,
@@ -35,7 +35,7 @@ impl DependencyKind {
 }
 
 #[derive(Clone)]
-pub struct Dependencies(Vec<Dependency>);
+pub struct Dependencies(pub Vec<Dependency>);
 
 impl Dependencies {
     pub fn new(dependencies: Vec<Dependency>) -> Self {

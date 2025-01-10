@@ -1,4 +1,4 @@
-use semver::Version;
+use semver::{Version, VersionReq};
 use toml_edit::{DocumentMut, Item, Value};
 
 use crate::{
@@ -6,10 +6,11 @@ use crate::{
     dependency::{Dependencies, Dependency, DependencyKind},
 };
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CargoDependency {
     pub name: String,
     pub version: String,
+    pub package: Option<String>,
     pub kind: DependencyKind,
 }
 
@@ -33,14 +34,14 @@ impl PartialOrd for CargoDependency {
 
 impl CargoDependency {
     fn get_latest_version_wrapper(&self) -> Option<Dependency> {
-        let parsed_current_version = Version::parse(&self.version).ok()?;
+        let parsed_current_version_req = VersionReq::parse(&self.version).ok()?;
 
-        let response = api::get_latest_version(self).expect("Unable to reach crates.io");
+        let response = api::get_latest_version(self).expect("Unable to reach crates.io")?;
 
         let parsed_latest_version =
             Version::parse(&response.latest_version).expect("Latest version is not a valid semver");
 
-        if parsed_current_version < parsed_latest_version {
+        if !parsed_current_version_req.matches(&parsed_latest_version) {
             Some(Dependency {
                 name: self.name.to_string(),
                 current_version: self.version.to_string(),
@@ -57,6 +58,7 @@ impl CargoDependency {
     }
 }
 
+#[derive(Debug)]
 pub struct CargoDependencies {
     dependencies: Vec<CargoDependency>,
     pub cargo_toml: DocumentMut,
@@ -73,22 +75,19 @@ impl CargoDependencies {
         }
     }
 
-    pub fn retrieve_outdated_dependencies(&self) -> Dependencies {
-        let mut threads = Vec::new();
-
-        for dependency in self.dependencies.iter() {
-            let dependency = dependency.clone();
-            threads.push(std::thread::spawn(move || {
-                dependency.get_latest_version_wrapper()
-            }));
-        }
-
-        Dependencies::new(
-            threads
-                .into_iter()
-                .flat_map(|t| t.join())
-                .flatten()
-                .collect(),
+    pub fn into_parts(self) -> (Dependencies, DocumentMut) {
+        (
+            Dependencies::new(
+                self.dependencies
+                    .into_iter()
+                    .map(|d| std::thread::spawn(move || d.get_latest_version_wrapper()))
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .flat_map(|t| t.join())
+                    .flatten()
+                    .collect(),
+            ),
+            self.cargo_toml,
         )
     }
 
@@ -148,15 +147,28 @@ fn extract_dependencies_from_sections(
     package_deps
         .iter()
         .flat_map(|(name, package_data)| {
-            let version = match package_data {
-                Item::Value(Value::String(v)) => v.value().to_string(),
-                Item::Value(Value::InlineTable(t)) => t.get("version")?.as_str()?.to_string(),
-                Item::Table(t) => t.get("version")?.as_str()?.to_string(),
+            let (version, package) = match package_data {
+                Item::Value(Value::String(v)) => (v.value().to_string(), None),
+                Item::Value(Value::InlineTable(t)) => (
+                    t.get("version")?.as_str()?.to_string(),
+                    t.get("package")
+                        .map(|e| e.as_str())
+                        .flatten()
+                        .map(|e| e.to_owned()),
+                ),
+                Item::Table(t) => (
+                    t.get("version")?.as_str()?.to_string(),
+                    t.get("package")
+                        .map(|e| e.as_str())
+                        .flatten()
+                        .map(|e| e.to_owned()),
+                ),
                 _ => return None,
             };
 
             Some(CargoDependency {
                 name: name.to_string(),
+                package,
                 version,
                 kind,
             })

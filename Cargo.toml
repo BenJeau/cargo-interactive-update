@@ -11,11 +11,12 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 clap = { version = "4.5.20", features = ["derive"] }
-clap-cargo = "0.14.1"
+clap-cargo = "0.15.1"
 crossterm = { version = "0.28.1", default-features = false, features = ["events"] }
 curl = "0.4.47"
 semver = "1.0.23"
 serde_json = "1.0.128"
+termbg = "0.6.2"
 toml_edit = "0.22.22"
 
 [profile.release]

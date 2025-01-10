@@ -1,13 +1,14 @@
 use crossterm::{
-    cursor::{Hide, MoveTo, MoveToNextLine, Show},
+    cursor::{Hide, MoveTo, MoveToColumn, MoveToNextLine, Show},
     event::{self, KeyCode, KeyModifiers},
-    execute,
+    queue,
     style::{Print, PrintStyledContent, ResetColor, Stylize},
     terminal::{
         disable_raw_mode, enable_raw_mode, Clear, ClearType, DisableLineWrap, EnableLineWrap,
     },
 };
 use std::io::{stdout, Write};
+use termbg::Theme;
 
 use crate::dependency::{Dependencies, Dependency, DependencyKind};
 
@@ -18,6 +19,7 @@ pub struct State {
     outdated_deps: Dependencies,
     total_deps: usize,
     longest_attributes: Longest,
+    theme: termbg::Theme,
 }
 
 pub enum Event {
@@ -53,7 +55,12 @@ impl Longest {
 }
 
 impl State {
-    pub fn new(outdated_deps: Dependencies, total_deps: usize, default_selected: bool) -> Self {
+    pub fn new(
+        outdated_deps: Dependencies,
+        total_deps: usize,
+        default_selected: bool,
+        theme: Theme,
+    ) -> Self {
         Self {
             stdout: stdout(),
             selected: vec![default_selected; outdated_deps.len()],
@@ -61,40 +68,72 @@ impl State {
             longest_attributes: Longest::get_longest_attributes(&outdated_deps),
             outdated_deps,
             total_deps,
+            theme,
         }
     }
 
     pub fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         enable_raw_mode()?;
-        execute!(self.stdout, Hide)?;
+        queue!(self.stdout, Hide, Clear(ClearType::All))?;
+
+        self.render_header()?;
+        self.render_dependencies(&[])?;
+        self.render_footer_actions()?;
+
+        self.stdout.flush()?;
         Ok(())
     }
 
     pub fn handle_keyboard_event(&mut self) -> Result<Event, Box<dyn std::error::Error>> {
         if let event::Event::Key(key) = event::read()? {
             match (key.code, key.modifiers) {
-                (KeyCode::Up | KeyCode::Left, _) => {
+                (KeyCode::Up | KeyCode::Char('k'), _) => {
+                    let prev_i = self.cursor_location;
                     self.cursor_location = if self.cursor_location == 0 {
                         self.outdated_deps.len() - 1
                     } else {
                         self.cursor_location - 1
                     };
+
+                    self.render_dependencies(&[prev_i, self.cursor_location])?;
                 }
-                (KeyCode::Down | KeyCode::Right, _) => {
+                (KeyCode::Down | KeyCode::Char('j'), _) => {
+                    let prev_i = self.cursor_location;
                     self.cursor_location = (self.cursor_location + 1) % self.outdated_deps.len();
+
+                    self.render_dependencies(&[prev_i, self.cursor_location])?;
+                }
+                (KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab, _) => {
+                    let prev_i = self.cursor_location;
+
+                    self.cursor_location = self.prev_section_location();
+                    self.render_dependencies(&[prev_i, self.cursor_location])?;
+                }
+                (KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab, _) => {
+                    let prev_i = self.cursor_location;
+
+                    self.cursor_location = self.next_section_location();
+                    self.render_dependencies(&[prev_i, self.cursor_location])?;
                 }
                 (KeyCode::Char(' '), _) => {
                     self.selected[self.cursor_location] = !self.selected[self.cursor_location];
+                    self.render_dependencies(&[self.cursor_location])?;
                 }
                 (KeyCode::Enter, _) => {
                     self.reset_terminal()?;
                     return Ok(Event::UpdateDependencies);
                 }
                 (KeyCode::Char('a'), _) => {
-                    self.selected = vec![true; self.outdated_deps.len()];
+                    if self.selected.iter().all(|s| *s) {
+                        self.selected = vec![false; self.outdated_deps.len()];
+                    } else {
+                        self.selected = vec![true; self.outdated_deps.len()];
+                    }
+                    self.render_dependencies(&[])?;
                 }
                 (KeyCode::Char('i'), _) => {
                     self.selected = self.selected.iter().map(|s| !s).collect();
+                    self.render_dependencies(&[])?;
                 }
                 (KeyCode::Esc | KeyCode::Char('q'), _)
                 | (KeyCode::Char('c') | KeyCode::Char('z'), KeyModifiers::CONTROL) => {
@@ -105,11 +144,67 @@ impl State {
             }
         }
 
+        self.stdout.flush()?;
         Ok(Event::HandleKeyboard)
     }
 
+    fn next_section_location(&self) -> usize {
+        let curr_kind = self.outdated_deps.0[self.cursor_location].kind;
+
+        let i = self
+            .outdated_deps
+            .0
+            .iter()
+            .enumerate()
+            .skip_while(|(_, d)| d.kind != curr_kind)
+            .skip_while(|(_, d)| d.kind == curr_kind)
+            .map(|(i, _)| i)
+            .next();
+
+        if let Some(i) = i {
+            i
+        } else if self.outdated_deps.0[0].kind == self.outdated_deps.0[self.cursor_location].kind {
+            self.cursor_location
+        } else {
+            0
+        }
+    }
+
+    fn prev_section_location(&self) -> usize {
+        let curr_kind = self.outdated_deps.0[self.cursor_location].kind;
+
+        let mut iter = self.outdated_deps.0[..self.cursor_location]
+            .iter()
+            .enumerate()
+            .rev()
+            .skip_while(|(_, d)| d.kind == curr_kind);
+
+        if let Some((i_, d_)) = iter.next() {
+            iter.take_while(|(_, d)| d.kind == d_.kind)
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(i_)
+        } else if self.outdated_deps.0.last().unwrap().kind
+            == self.outdated_deps.0[self.cursor_location].kind
+        {
+            self.cursor_location
+        } else {
+            let last_kind = self.outdated_deps.0.last().unwrap().kind;
+
+            self.outdated_deps
+                .0
+                .iter()
+                .enumerate()
+                .rev()
+                .take_while(|(_, d)| d.kind == last_kind)
+                .last()
+                .unwrap()
+                .0
+        }
+    }
+
     fn reset_terminal(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        execute!(self.stdout, Show, ResetColor)?;
+        queue!(self.stdout, Show, ResetColor)?;
         disable_raw_mode()?;
         Ok(())
     }
@@ -125,19 +220,9 @@ impl State {
         )
     }
 
-    pub fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.render_header()?;
-        self.render_dependencies()?;
-        self.render_footer_actions()?;
-
-        self.stdout.flush()?;
-        Ok(())
-    }
-
     fn render_header(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        execute!(
+        queue!(
             self.stdout,
-            Clear(ClearType::All),
             MoveTo(0, 0),
             Print(format!(
                 "{} out of the {} direct dependencies are outdated.",
@@ -149,30 +234,38 @@ impl State {
         Ok(())
     }
 
-    fn render_dependencies(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    // parameter takes a specific indices to re-render
+    // if indices is empty, then re-render the entire list
+    fn render_dependencies(&mut self, indices: &[usize]) -> Result<(), Box<dyn std::error::Error>> {
         let mut offset = 0;
 
-        execute!(self.stdout, DisableLineWrap)?;
+        queue!(self.stdout, DisableLineWrap)?;
+        queue!(self.stdout, MoveTo(0, 0))?;
 
         for kind in DependencyKind::ordered() {
-            offset += self.render_dependencies_subsection(kind, offset)?;
+            offset += self.render_dependencies_subsection(kind, offset, indices)?;
         }
 
-        execute!(self.stdout, EnableLineWrap)?;
+        queue!(self.stdout, EnableLineWrap)?;
 
         Ok(())
     }
 
+    // Renders dependencies of a section
+    // Returns length of dependencies in the section
     fn render_dependencies_subsection(
         &mut self,
         kind: DependencyKind,
         offset: usize,
+        indices: &[usize],
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let deps = self
             .outdated_deps
             .iter()
-            .filter(|dep| dep.kind == kind)
-            .cloned()
+            .enumerate()
+            .skip(offset)
+            .take_while(|(_, dep)| dep.kind == kind)
+            .map(|(i, _)| i)
             .collect::<Vec<_>>();
 
         if deps.is_empty() {
@@ -187,27 +280,58 @@ impl State {
             .filter(|(selected, dep)| **selected && dep.kind == kind)
             .count();
 
-        execute!(
-            self.stdout,
-            MoveToNextLine(1),
-            PrintStyledContent(format!("{title} ({num_selected} selected):").cyan()),
-            MoveToNextLine(1)
-        )?;
+        queue!(self.stdout, MoveToNextLine(2))?;
+        let row = crossterm::cursor::position()
+            .expect("should return cursor position")
+            .1;
 
-        for (i, dependency) in deps.iter().enumerate() {
-            self.render_dependency(i + offset, dependency)?;
+        if !indices.is_empty() {
+            queue!(
+                self.stdout,
+                MoveToColumn(title.len() as u16 + 2),
+                Clear(ClearType::UntilNewLine),
+                PrintStyledContent(format!("{num_selected} selected):").cyan()),
+                MoveToNextLine(1)
+            )?;
+
+            for &i in indices {
+                if offset <= i && i < offset + deps.len() {
+                    // header (3) + section header (3 * num_kind) + i
+                    queue!(
+                        self.stdout,
+                        MoveTo(0, 1 + 2 * (1 + kind as u16) + i as u16),
+                        Clear(ClearType::CurrentLine)
+                    )?;
+                    self.render_dependency(i)?;
+                }
+            }
+        } else {
+            queue!(
+                self.stdout,
+                MoveToColumn(0),
+                Clear(ClearType::CurrentLine),
+                PrintStyledContent(format!("{title} ({num_selected} selected):").cyan()),
+                MoveToNextLine(1)
+            )?;
+
+            for i in &deps {
+                queue!(self.stdout, Clear(ClearType::CurrentLine))?;
+                self.render_dependency(*i)?;
+            }
         }
+
+        queue!(self.stdout, MoveTo(0, row + deps.len() as u16))?;
 
         Ok(deps.len())
     }
 
     fn render_footer_actions(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        execute!(
+        queue!(
             self.stdout,
             MoveToNextLine(2),
             Print(format!(
                 "Use {} to navigate, {} to select all, {} to invert, {} to select/deselect, {} to update, {}/{} to exit",
-                "arrow keys".cyan(),
+                "arrow keys/hjkl".cyan(),
                 "<a>".cyan(),
                 "<i>".cyan(),
                 "<space>".cyan(),
@@ -218,10 +342,8 @@ impl State {
         Ok(())
     }
 
-    fn render_dependency(
-        &mut self,
-        i: usize,
-        Dependency {
+    fn render_dependency(&mut self, i: usize) -> Result<(), Box<dyn std::error::Error>> {
+        let Dependency {
             name,
             current_version,
             latest_version,
@@ -230,8 +352,8 @@ impl State {
             latest_version_date,
             current_version_date,
             ..
-        }: &Dependency,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+        } = &self.outdated_deps.0[i];
+
         let name_spacing = " ".repeat(self.longest_attributes.name - name.len());
         let current_version_spacing =
             " ".repeat(self.longest_attributes.current_version - current_version.len());
@@ -241,16 +363,20 @@ impl State {
         let bullet = if self.selected[i] { "●" } else { "○" };
 
         let latest_version_date = get_date_from_datetime_string(latest_version_date.as_deref())
-            .unwrap_or("none")
+            .unwrap_or("none      ")
             .italic()
             .dim();
         let current_version_date = get_date_from_datetime_string(current_version_date.as_deref())
-            .unwrap_or("none")
+            .unwrap_or("none      ")
             .italic()
             .dim();
 
         let name = name.clone().bold();
-        let repository = repository.as_deref().unwrap_or("none").underline_black();
+        let mut repository = repository.as_deref().unwrap_or("none").underline_black();
+        if self.theme == Theme::Dark {
+            repository = repository.underline_white();
+        }
+
         let description = description.as_deref().unwrap_or("").dim();
 
         let row = format!(
@@ -259,11 +385,13 @@ impl State {
 
         let colored_row = if i == self.cursor_location {
             row.green()
-        } else {
+        } else if self.theme == Theme::Light {
             row.black()
+        } else {
+            row.white()
         };
 
-        execute!(
+        queue!(
             self.stdout,
             PrintStyledContent(colored_row),
             MoveToNextLine(1),
