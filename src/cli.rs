@@ -296,10 +296,9 @@ impl State {
 
             for &i in indices {
                 if offset <= i && i < offset + deps.len() {
-                    // header (3) + section header (3 * num_kind) + i
                     queue!(
                         self.stdout,
-                        MoveTo(0, 1 + 2 * (1 + kind as u16) + i as u16),
+                        MoveTo(0, row - offset as u16 + 1 + i as u16),
                         Clear(ClearType::CurrentLine)
                     )?;
                     self.render_dependency(i)?;
