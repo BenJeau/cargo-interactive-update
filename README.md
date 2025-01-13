@@ -70,6 +70,20 @@ or using the long form:
 cargo interactive-update --all --yes
 ```
 
+## Development
+
+After cloning the repository, you can install the extension locally with the following command:
+
+```bash
+cargo install --path .
+```
+
+Afterwards, you can run the extension with the following command:
+
+```bash
+cargo interactive-update
+```
+
 ## License
 
 This project is licensed under the MIT license.
