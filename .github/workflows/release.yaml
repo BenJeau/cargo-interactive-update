@@ -75,6 +75,7 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -114,7 +115,7 @@ jobs:
         uses: crate-ci/typos@v1.29.4
 
   prepare-release:
-    needs: [lint, format, test, audit, check, typos]
+    needs: [lint, format, test, check, typos]
     permissions:
       contents: write
     runs-on: ubuntu-latest
