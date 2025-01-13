@@ -1,4 +1,4 @@
-name: Run clippy, fmt, test, typos, audit, and check
+name: Rust CI
 
 on:
   pull_request:
