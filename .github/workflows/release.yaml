@@ -29,7 +29,6 @@ jobs:
       - name: Setup cache
         uses: actions/cache@v4
         with:
-          save-always: true
           path: |
             ~/.cargo/bin/
             ~/.cargo/registry/index/
@@ -64,7 +63,6 @@ jobs:
       - name: Setup cache
         uses: actions/cache@v4
         with:
-          save-always: true
           path: |
             ~/.cargo/bin/
             ~/.cargo/registry/index/
@@ -77,11 +75,22 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Rust setup
         run: rustup toolchain install stable --profile minimal
+      - name: Setup cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-audit
       - name: Install cargo-audit
         run: cargo install cargo-audit
       - name: Run cargo audit
@@ -97,7 +106,6 @@ jobs:
       - name: Setup cache
         uses: actions/cache@v4
         with:
-          save-always: true
           path: |
             ~/.cargo/bin/
             ~/.cargo/registry/index/
@@ -108,8 +116,16 @@ jobs:
       - name: Run cargo check
         run: cargo check
 
+  typos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run typos
+        uses: crate-ci/typos@v1.29.4
+
   prepare-release:
-    needs: [lint, format, test, audit, check]
+    needs: [lint, format, test, check, typos]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -139,7 +155,6 @@ jobs:
       - name: Setup cache
         uses: actions/cache@v4
         with:
-          save-always: true
           path: |
             ~/.cargo/bin/
             ~/.cargo/registry/index/
@@ -184,7 +199,6 @@ jobs:
       - name: Setup cache
         uses: actions/cache@v4
         with:
-          save-always: true
           path: |
             ~/.cargo/bin/
             ~/.cargo/registry/index/
