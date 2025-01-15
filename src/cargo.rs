@@ -1,4 +1,5 @@
 use semver::Version;
+use std::collections::HashMap;
 use toml_edit::{DocumentMut, Item, Value};
 
 use crate::{
@@ -60,6 +61,7 @@ impl CargoDependency {
 pub struct CargoDependencies {
     dependencies: Vec<CargoDependency>,
     pub cargo_toml: DocumentMut,
+    workspace_members: HashMap<String, Box<CargoDependencies>>,
 }
 
 impl CargoDependencies {
@@ -67,9 +69,11 @@ impl CargoDependencies {
         let cargo_toml = read_cargo_file();
         let mut dependencies = get_cargo_dependencies(&cargo_toml);
         dependencies.sort();
+        let workspace_members = get_workspace_members(&cargo_toml);
         Self {
             dependencies,
             cargo_toml,
+            workspace_members,
         }
     }
 
@@ -162,4 +166,24 @@ fn extract_dependencies_from_sections(
             })
         })
         .collect()
+}
+
+fn get_workspace_members(cargo_toml: &DocumentMut) -> HashMap<String, Box<CargoDependencies>> {
+    let Some(workspace_members) = cargo_toml
+        .get("workspace")
+        .and_then(|i| i.get("members"))
+        .and_then(|i| i.as_array())
+    else {
+        return HashMap::new();
+    };
+
+    workspace_members
+        .iter()
+        .fold(HashMap::new(), |mut acc, member| {
+            acc.insert(
+                member.as_str().unwrap().to_string(),
+                Box::new(CargoDependencies::gather_dependencies()),
+            );
+            acc
+        })
 }
