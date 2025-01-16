@@ -9,7 +9,7 @@ mod dependency;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args::CargoCli::InteractiveUpdate(args) = args::CargoCli::parse();
 
-    let dependencies = cargo::CargoDependencies::gather_dependencies();
+    let dependencies = cargo::CargoDependencies::gather_dependencies("");
     let outdated_deps = dependencies.retrieve_outdated_dependencies();
 
     let total_deps = dependencies.len();

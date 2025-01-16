@@ -65,7 +65,7 @@ pub struct CargoDependencies {
 }
 
 impl CargoDependencies {
-    pub fn gather_dependencies() -> Self {
+    pub fn gather_dependencies(relative_path: &str) -> Self {
         let cargo_toml = read_cargo_file();
         let mut dependencies = get_cargo_dependencies(&cargo_toml);
         dependencies.sort();
@@ -180,9 +180,13 @@ fn get_workspace_members(cargo_toml: &DocumentMut) -> HashMap<String, Box<CargoD
     workspace_members
         .iter()
         .fold(HashMap::new(), |mut acc, member| {
+            let Some(member) = member.as_str() else {
+                return acc;
+            };
+
             acc.insert(
-                member.as_str().unwrap().to_string(),
-                Box::new(CargoDependencies::gather_dependencies()),
+                member.to_string(),
+                Box::new(CargoDependencies::gather_dependencies(member)),
             );
             acc
         })
