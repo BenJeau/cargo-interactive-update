@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crossterm::style::Stylize;
 use toml_edit::{value, DocumentMut, Item, Value};
 
@@ -35,19 +37,28 @@ impl DependencyKind {
 }
 
 #[derive(Clone)]
-pub struct Dependencies(Vec<Dependency>);
+pub struct Dependencies {
+    dependencies: Vec<Dependency>,
+    workspace_members: HashMap<String, Box<Dependencies>>,
+}
 
 impl Dependencies {
-    pub fn new(dependencies: Vec<Dependency>) -> Self {
-        Self(dependencies)
+    pub fn new(
+        dependencies: Vec<Dependency>,
+        workspace_members: HashMap<String, Box<Dependencies>>,
+    ) -> Self {
+        Self {
+            dependencies,
+            workspace_members,
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.dependencies.len()
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Dependency> {
-        self.0.iter()
+        self.dependencies.iter()
     }
 
     pub fn apply_versions(
@@ -57,7 +68,7 @@ impl Dependencies {
     ) -> Result<(), Box<dyn std::error::Error>> {
         println!("\n\n");
 
-        if self.0.is_empty() {
+        if self.dependencies.is_empty() {
             println!("No dependencies have been updated.");
             return Ok(());
         }
@@ -83,7 +94,7 @@ impl Dependencies {
         cargo_toml: &mut DocumentMut,
         pin: bool,
     ) {
-        for dependency in self.0.iter().filter(|d| d.kind == kind) {
+        for dependency in self.dependencies.iter().filter(|d| d.kind == kind) {
             let version = if pin {
                 value(format!("={}", dependency.latest_version))
             } else {
@@ -112,6 +123,6 @@ impl IntoIterator for Dependencies {
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.dependencies.into_iter()
     }
 }

@@ -58,6 +58,7 @@ impl CargoDependency {
     }
 }
 
+#[derive(Clone)]
 pub struct CargoDependencies {
     dependencies: Vec<CargoDependency>,
     pub cargo_toml: DocumentMut,
@@ -66,7 +67,7 @@ pub struct CargoDependencies {
 
 impl CargoDependencies {
     pub fn gather_dependencies(relative_path: &str) -> Self {
-        let cargo_toml = read_cargo_file();
+        let cargo_toml = read_cargo_file(relative_path);
         let mut dependencies = get_cargo_dependencies(&cargo_toml);
         dependencies.sort();
         let workspace_members = get_workspace_members(&cargo_toml);
@@ -78,22 +79,43 @@ impl CargoDependencies {
     }
 
     pub fn retrieve_outdated_dependencies(&self) -> Dependencies {
-        let mut threads = Vec::new();
+        let mut direct_dependencies_threads = Vec::new();
+        let mut workspace_member_threads = HashMap::new();
 
         for dependency in self.dependencies.iter() {
             let dependency = dependency.clone();
-            threads.push(std::thread::spawn(move || {
+            direct_dependencies_threads.push(std::thread::spawn(move || {
                 dependency.get_latest_version_wrapper()
             }));
         }
 
-        Dependencies::new(
-            threads
-                .into_iter()
-                .flat_map(|t| t.join())
-                .flatten()
-                .collect(),
-        )
+        for (member, dependencies) in self.workspace_members.iter() {
+            let dependencies = dependencies.clone();
+            workspace_member_threads.insert(
+                member.to_string(),
+                std::thread::spawn(move || dependencies.retrieve_outdated_dependencies()),
+            );
+        }
+
+        let dependencies = direct_dependencies_threads
+            .into_iter()
+            .flat_map(|t| t.join())
+            .flatten()
+            .collect();
+
+        let workspace_members = workspace_member_threads.into_iter().fold(
+            HashMap::new(),
+            |mut acc, (member, dependencies)| {
+                let Ok(dependencies) = dependencies.join() else {
+                    return acc;
+                };
+
+                acc.insert(member, Box::new(dependencies));
+                acc
+            },
+        );
+
+        Dependencies::new(dependencies, workspace_members)
     }
 
     pub fn len(&self) -> usize {
@@ -101,9 +123,9 @@ impl CargoDependencies {
     }
 }
 
-fn read_cargo_file() -> DocumentMut {
-    let cargo_toml_content =
-        std::fs::read_to_string("Cargo.toml").expect("Unable to read Cargo.toml file");
+fn read_cargo_file(relative_path: &str) -> DocumentMut {
+    let cargo_toml_content = std::fs::read_to_string(format!("{relative_path}/Cargo.toml"))
+        .expect("Unable to read Cargo.toml file");
 
     cargo_toml_content
         .parse()
