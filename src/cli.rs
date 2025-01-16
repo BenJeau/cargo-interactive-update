@@ -122,7 +122,6 @@ impl State {
                 .filter(|(_, s)| **s)
                 .map(|(d, _)| d)
                 .collect(),
-            Default::default(), // TODO: actually implement workspace members
         )
     }
 

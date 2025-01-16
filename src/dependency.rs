@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crossterm::style::Stylize;
 use toml_edit::{value, DocumentMut, Item, Value};
 
@@ -15,6 +13,13 @@ pub struct Dependency {
     pub latest_version_date: Option<String>,
     pub current_version_date: Option<String>,
     pub kind: DependencyKind,
+    pub workspace_member: Option<WorkspaceMember>,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct WorkspaceMember {
+    pub path: String,
+    pub package_name: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -37,28 +42,19 @@ impl DependencyKind {
 }
 
 #[derive(Clone)]
-pub struct Dependencies {
-    dependencies: Vec<Dependency>,
-    workspace_members: HashMap<String, Box<Dependencies>>,
-}
+pub struct Dependencies(pub Vec<Dependency>);
 
 impl Dependencies {
-    pub fn new(
-        dependencies: Vec<Dependency>,
-        workspace_members: HashMap<String, Box<Dependencies>>,
-    ) -> Self {
-        Self {
-            dependencies,
-            workspace_members,
-        }
+    pub fn new(dependencies: Vec<Dependency>) -> Self {
+        Self(dependencies)
     }
 
     pub fn len(&self) -> usize {
-        self.dependencies.len()
+        self.0.len()
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Dependency> {
-        self.dependencies.iter()
+        self.0.iter()
     }
 
     pub fn apply_versions(
@@ -68,7 +64,7 @@ impl Dependencies {
     ) -> Result<(), Box<dyn std::error::Error>> {
         println!("\n\n");
 
-        if self.dependencies.is_empty() {
+        if self.0.is_empty() {
             println!("No dependencies have been updated.");
             return Ok(());
         }
@@ -94,7 +90,7 @@ impl Dependencies {
         cargo_toml: &mut DocumentMut,
         pin: bool,
     ) {
-        for dependency in self.dependencies.iter().filter(|d| d.kind == kind) {
+        for dependency in self.0.iter().filter(|d| d.kind == kind) {
             let version = if pin {
                 value(format!("={}", dependency.latest_version))
             } else {
@@ -123,6 +119,6 @@ impl IntoIterator for Dependencies {
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.dependencies.into_iter()
+        self.0.into_iter()
     }
 }

@@ -4,7 +4,7 @@ use toml_edit::{DocumentMut, Item, Value};
 
 use crate::{
     api,
-    dependency::{Dependencies, Dependency, DependencyKind},
+    dependency::{Dependencies, Dependency, DependencyKind, WorkspaceMember},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -51,6 +51,7 @@ impl CargoDependency {
                 current_version_date: response.current_version_date,
                 description: response.description,
                 kind: self.kind,
+                workspace_member: None, // TODO: implement workspace members
             })
         } else {
             None
@@ -60,6 +61,7 @@ impl CargoDependency {
 
 #[derive(Clone)]
 pub struct CargoDependencies {
+    package_name: String,
     dependencies: Vec<CargoDependency>,
     pub cargo_toml: DocumentMut,
     workspace_members: HashMap<String, Box<CargoDependencies>>,
@@ -68,10 +70,12 @@ pub struct CargoDependencies {
 impl CargoDependencies {
     pub fn gather_dependencies(relative_path: &str) -> Self {
         let cargo_toml = read_cargo_file(relative_path);
+        let package_name = get_package_name(&cargo_toml);
+        let workspace_members = get_workspace_members(&cargo_toml);
         let mut dependencies = get_cargo_dependencies(&cargo_toml);
         dependencies.sort();
-        let workspace_members = get_workspace_members(&cargo_toml);
         Self {
+            package_name,
             dependencies,
             cargo_toml,
             workspace_members,
@@ -92,30 +96,34 @@ impl CargoDependencies {
         for (member, dependencies) in self.workspace_members.iter() {
             let dependencies = dependencies.clone();
             workspace_member_threads.insert(
-                member.to_string(),
+                WorkspaceMember {
+                    package_name: member.to_string(),
+                    path: self.package_name.to_string(),
+                },
                 std::thread::spawn(move || dependencies.retrieve_outdated_dependencies()),
             );
         }
 
-        let dependencies = direct_dependencies_threads
+        let mut dependencies = direct_dependencies_threads
             .into_iter()
             .flat_map(|t| t.join())
             .flatten()
-            .collect();
+            .collect::<Vec<_>>();
 
-        let workspace_members = workspace_member_threads.into_iter().fold(
-            HashMap::new(),
-            |mut acc, (member, dependencies)| {
-                let Ok(dependencies) = dependencies.join() else {
-                    return acc;
+        workspace_member_threads
+            .into_iter()
+            .for_each(|(member, workspace_dependencies)| {
+                let Ok(workspace_dependencies) = workspace_dependencies.join() else {
+                    return;
                 };
 
-                acc.insert(member, Box::new(dependencies));
-                acc
-            },
-        );
+                for mut workspace_dependency in workspace_dependencies {
+                    workspace_dependency.workspace_member = Some(member.clone());
+                    dependencies.push(workspace_dependency);
+                }
+            });
 
-        Dependencies::new(dependencies, workspace_members)
+        Dependencies::new(dependencies)
     }
 
     pub fn len(&self) -> usize {
@@ -212,4 +220,13 @@ fn get_workspace_members(cargo_toml: &DocumentMut) -> HashMap<String, Box<CargoD
             );
             acc
         })
+}
+
+fn get_package_name(cargo_toml: &DocumentMut) -> String {
+    cargo_toml
+        .get("package")
+        .and_then(|i| i.get("name"))
+        .and_then(|i| i.as_str())
+        .unwrap_or_default()
+        .to_string()
 }
