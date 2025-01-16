@@ -13,13 +13,8 @@ pub struct Dependency {
     pub latest_version_date: Option<String>,
     pub current_version_date: Option<String>,
     pub kind: DependencyKind,
-    pub workspace_member: Option<WorkspaceMember>,
-}
-
-#[derive(Clone, Hash, PartialEq, Eq)]
-pub struct WorkspaceMember {
-    pub path: String,
-    pub package_name: String,
+    pub package_name: Option<String>,
+    pub workspace_path: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -111,6 +106,10 @@ impl Dependencies {
                 section[&dependency.name]["version"] = version
             }
         }
+    }
+
+    pub fn has_workspace_members(&self) -> bool {
+        self.0.iter().any(|d| d.workspace_path.is_some())
     }
 }
 

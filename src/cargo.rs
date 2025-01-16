@@ -4,7 +4,7 @@ use toml_edit::{DocumentMut, Item, Value};
 
 use crate::{
     api,
-    dependency::{Dependencies, Dependency, DependencyKind, WorkspaceMember},
+    dependency::{Dependencies, Dependency, DependencyKind},
 };
 
 #[derive(Clone, PartialEq, Eq)]
@@ -33,7 +33,11 @@ impl PartialOrd for CargoDependency {
 }
 
 impl CargoDependency {
-    fn get_latest_version_wrapper(&self) -> Option<Dependency> {
+    fn get_latest_version_wrapper(
+        &self,
+        package_name: Option<String>,
+        workspace_path: Option<String>,
+    ) -> Option<Dependency> {
         let parsed_current_version = Version::parse(&self.version).ok()?;
 
         let response = api::get_latest_version(self).expect("Unable to reach crates.io");
@@ -51,7 +55,8 @@ impl CargoDependency {
                 current_version_date: response.current_version_date,
                 description: response.description,
                 kind: self.kind,
-                workspace_member: None, // TODO: implement workspace members
+                package_name,
+                workspace_path,
             })
         } else {
             None
@@ -82,26 +87,25 @@ impl CargoDependencies {
         }
     }
 
-    pub fn retrieve_outdated_dependencies(&self) -> Dependencies {
+    pub fn retrieve_outdated_dependencies(&self, workspace_path: Option<String>) -> Dependencies {
         let mut direct_dependencies_threads = Vec::new();
-        let mut workspace_member_threads = HashMap::new();
+        let mut workspace_member_threads = Vec::new();
 
         for dependency in self.dependencies.iter() {
             let dependency = dependency.clone();
+            let package_name = self.package_name.to_string();
+            let workspace_path = workspace_path.clone();
             direct_dependencies_threads.push(std::thread::spawn(move || {
-                dependency.get_latest_version_wrapper()
+                dependency.get_latest_version_wrapper(Some(package_name), workspace_path)
             }));
         }
 
         for (member, dependencies) in self.workspace_members.iter() {
             let dependencies = dependencies.clone();
-            workspace_member_threads.insert(
-                WorkspaceMember {
-                    package_name: member.to_string(),
-                    path: self.package_name.to_string(),
-                },
-                std::thread::spawn(move || dependencies.retrieve_outdated_dependencies()),
-            );
+            let member = member.clone();
+            workspace_member_threads.push(std::thread::spawn(move || {
+                dependencies.retrieve_outdated_dependencies(Some(member))
+            }));
         }
 
         let mut dependencies = direct_dependencies_threads
@@ -112,15 +116,10 @@ impl CargoDependencies {
 
         workspace_member_threads
             .into_iter()
-            .for_each(|(member, workspace_dependencies)| {
-                let Ok(workspace_dependencies) = workspace_dependencies.join() else {
-                    return;
-                };
-
-                for mut workspace_dependency in workspace_dependencies {
-                    workspace_dependency.workspace_member = Some(member.clone());
-                    dependencies.push(workspace_dependency);
-                }
+            .for_each(|workspace_dependencies| {
+                workspace_dependencies
+                    .join()
+                    .map(|workspace_dependencies| dependencies.extend(workspace_dependencies));
             });
 
         Dependencies::new(dependencies)
