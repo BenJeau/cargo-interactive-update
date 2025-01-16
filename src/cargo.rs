@@ -69,10 +69,15 @@ impl CargoDependencies {
         }
     }
 
-    pub fn retrieve_outdated_dependencies(&self, workspace_path: Option<String>) -> Dependencies {
+    pub fn retrieve_outdated_dependencies(self, workspace_path: Option<String>) -> Dependencies {
         let mut direct_dependencies_threads = Vec::new();
         let mut workspace_member_threads = Vec::new();
+        let mut cargo_toml_files = HashMap::new();
 
+        cargo_toml_files.insert(
+            workspace_path.clone().unwrap_or_else(|| ".".to_string()),
+            self.cargo_toml,
+        );
         for dependency in self.dependencies.iter() {
             let dependency = dependency.clone();
             let package_name = self.package_name.to_string();
@@ -99,14 +104,15 @@ impl CargoDependencies {
         workspace_member_threads
             .into_iter()
             .for_each(|workspace_dependencies| {
-                let _ = workspace_dependencies
-                    .join()
-                    .map(|workspace_dependencies| dependencies.extend(workspace_dependencies));
+                let _ = workspace_dependencies.join().map(|workspace_dependencies| {
+                    dependencies.extend(workspace_dependencies.dependencies);
+                    cargo_toml_files.extend(workspace_dependencies.cargo_toml_files);
+                });
             });
 
         dependencies.sort();
 
-        Dependencies::new(dependencies)
+        Dependencies::new(dependencies, cargo_toml_files)
     }
 
     pub fn len(&self) -> usize {

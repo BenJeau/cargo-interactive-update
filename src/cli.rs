@@ -119,14 +119,8 @@ impl State {
     }
 
     pub fn selected_dependencies(self) -> Dependencies {
-        Dependencies::new(
-            self.outdated_deps
-                .into_iter()
-                .zip(self.selected.iter())
-                .filter(|(_, s)| **s)
-                .map(|(d, _)| d)
-                .collect(),
-        )
+        self.outdated_deps
+            .filter_selected_dependencies(self.selected)
     }
 
     pub fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
