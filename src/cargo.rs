@@ -7,29 +7,11 @@ use crate::{
     dependency::{Dependencies, Dependency, DependencyKind},
 };
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct CargoDependency {
     pub name: String,
     pub version: String,
     pub kind: DependencyKind,
-}
-
-impl Ord for CargoDependency {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let ordering = self.kind.cmp(&other.kind);
-
-        if ordering == std::cmp::Ordering::Equal {
-            self.name.cmp(&other.name)
-        } else {
-            ordering
-        }
-    }
-}
-
-impl PartialOrd for CargoDependency {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
 }
 
 impl CargoDependency {
@@ -66,9 +48,9 @@ impl CargoDependency {
 
 #[derive(Clone)]
 pub struct CargoDependencies {
+    pub cargo_toml: DocumentMut,
     package_name: String,
     dependencies: Vec<CargoDependency>,
-    pub cargo_toml: DocumentMut,
     workspace_members: HashMap<String, Box<CargoDependencies>>,
 }
 
@@ -76,13 +58,13 @@ impl CargoDependencies {
     pub fn gather_dependencies(relative_path: &str) -> Self {
         let cargo_toml = read_cargo_file(relative_path);
         let package_name = get_package_name(&cargo_toml);
+        let dependencies = get_cargo_dependencies(&cargo_toml);
         let workspace_members = get_workspace_members(&cargo_toml);
-        let mut dependencies = get_cargo_dependencies(&cargo_toml);
-        dependencies.sort();
+
         Self {
+            cargo_toml,
             package_name,
             dependencies,
-            cargo_toml,
             workspace_members,
         }
     }
@@ -121,6 +103,8 @@ impl CargoDependencies {
                     .join()
                     .map(|workspace_dependencies| dependencies.extend(workspace_dependencies));
             });
+
+        dependencies.sort();
 
         Dependencies::new(dependencies)
     }
