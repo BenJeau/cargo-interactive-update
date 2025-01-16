@@ -30,6 +30,7 @@ struct Longest {
     name: usize,
     current_version: usize,
     latest_version: usize,
+    package_name: usize,
 }
 
 impl Longest {
@@ -37,17 +38,20 @@ impl Longest {
         let mut name = 0;
         let mut current_version = 0;
         let mut latest_version = 0;
+        let mut package_name = 0;
 
         for dep in dependencies.iter() {
             name = name.max(dep.name.len());
             current_version = current_version.max(dep.current_version.len());
             latest_version = latest_version.max(dep.latest_version.len());
+            package_name = package_name.max(dep.package_name.as_ref().map_or(0, |s| s.len()));
         }
 
         Longest {
             name,
             current_version,
             latest_version,
+            package_name,
         }
     }
 }
