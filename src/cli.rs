@@ -233,6 +233,7 @@ impl State {
             description,
             latest_version_date,
             current_version_date,
+            package_name,
             ..
         }: &Dependency,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -256,9 +257,25 @@ impl State {
         let name = name.clone().bold();
         let repository = repository.as_deref().unwrap_or("none").underline_black();
         let description = description.as_deref().unwrap_or("").dim();
+        let package_name = if self.outdated_deps.has_workspace_members() {
+            let package_name = package_name.as_deref().unwrap_or("");
+            let package_name = if package_name.is_empty() {
+                "-".to_string()
+            } else {
+                package_name.to_string()
+            };
+
+            let package_name_spacing =
+                " ".repeat(self.longest_attributes.package_name - package_name.len());
+            format!("{package_name}{package_name_spacing}  ")
+                .blue()
+                .italic()
+        } else {
+            "".to_string().blue().italic()
+        };
 
         let row = format!(
-            "{bullet} {name}{name_spacing}  {current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  {repository} - {description}",
+            "{bullet} {name}{name_spacing}  {package_name}{current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  {repository} - {description}",
         );
 
         let colored_row = if i == self.cursor_location {
