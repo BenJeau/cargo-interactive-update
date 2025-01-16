@@ -117,7 +117,7 @@ impl CargoDependencies {
         workspace_member_threads
             .into_iter()
             .for_each(|workspace_dependencies| {
-                workspace_dependencies
+                let _ = workspace_dependencies
                     .join()
                     .map(|workspace_dependencies| dependencies.extend(workspace_dependencies));
             });
@@ -127,6 +127,10 @@ impl CargoDependencies {
 
     pub fn len(&self) -> usize {
         self.dependencies.len()
+            + self
+                .workspace_members
+                .values()
+                .fold(0, |acc, deps| acc + deps.len())
     }
 }
 
