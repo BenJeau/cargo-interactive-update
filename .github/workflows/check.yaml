@@ -1,22 +1,9 @@
-name: Build and release
+name: Rust CI
 
 on:
-  workflow_dispatch:
-    inputs:
-      bump:
-        type: choice
-        description: Bump version
-        options:
-          - major
-          - minor
-          - patch
-        default: patch
-        required: true
-      dry-run:
-        type: boolean
-        description: Dry run
-        default: false
-        required: true
+  pull_request:
+    branches:
+      - main
 
 jobs:
   lint:
@@ -146,88 +133,3 @@ jobs:
         uses: actions/checkout@v4
       - name: Run typos
         uses: crate-ci/typos@v1.29.4
-
-  prepare-release:
-    needs: [lint, format, test, test-realistic, check, typos]
-    permissions:
-      contents: write
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.bump-version.outputs.version }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Get latest tag
-        id: get-latest-tag
-        run: |
-          echo "latest_tag=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
-      - name: Bump version
-        id: bump-version
-        run: |
-          if [ "${{ inputs.bump }}" = "major" ]; then
-            echo "version=$(echo ${{ steps.get-latest-tag.outputs.latest_tag }} | awk -F. '{print ($1 + 1) ".0.0"}')" >> $GITHUB_OUTPUT
-          elif [ "${{ inputs.bump }}" = "minor" ]; then
-            echo "version=$(echo ${{ steps.get-latest-tag.outputs.latest_tag }} | awk -F. '{print $1 "." ($2 + 1) ".0"}')" >> $GITHUB_OUTPUT
-          elif [ "${{ inputs.bump }}" = "patch" ]; then
-            echo "version=$(echo ${{ steps.get-latest-tag.outputs.latest_tag }} | awk -F. '{print $1 "." $2 "." ($3 + 1)}')" >> $GITHUB_OUTPUT
-          fi
-      - name: Rust setup
-        run: rustup toolchain install stable --profile minimal
-      - name: Setup cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
-      - name: Update Cargo.toml version
-        run: |
-          sed -i -e 's/^version = .*/version = "${{ steps.bump-version.outputs.version }}"/' Cargo.toml
-          cargo check
-      - name: Commit changes
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
-          git commit -m "chore: bump version to ${{ steps.bump-version.outputs.version }}"
-          if [ "${{ inputs.dry-run }}" = "true" ]; then
-            echo "dry-run"
-          else
-            git push
-          fi
-      - name: Create and push tagged commit with version
-        run: |
-          git tag ${{ steps.bump-version.outputs.version }}
-          if [ "${{ inputs.dry-run }}" = "true" ]; then
-            echo "dry-run"
-          else
-            git push origin ${{ steps.bump-version.outputs.version }}
-          fi
-
-  build-and-release-crates:
-    needs: prepare-release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare-release.outputs.version }}
-      - name: Rust setup
-        run: rustup toolchain install stable --profile minimal
-      - name: Setup cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
-      - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CARGO_TOKEN }} ${{ inputs.dry-run && '--dry-run' || '' }}

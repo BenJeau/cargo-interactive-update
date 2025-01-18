@@ -15,10 +15,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         termbg::theme(Duration::from_millis(500)).unwrap_or(termbg::Theme::Light)
     });
 
-    let dependencies = cargo::CargoDependencies::gather_dependencies();
+    let dependencies = cargo::CargoDependencies::gather_dependencies(".");
     let total_deps = dependencies.len();
-
-    let (outdated_deps, cargo_toml) = dependencies.into_parts();
+    let outdated_deps = dependencies.retrieve_outdated_dependencies(None);
     let total_outdated_deps = outdated_deps.len();
 
     if total_outdated_deps == 0 {
@@ -36,9 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if args.yes {
-        state
-            .selected_dependencies()
-            .apply_versions(cargo_toml, args)?;
+        state.selected_dependencies().apply_versions(args)?;
         return Ok(());
     }
 
@@ -48,9 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match state.handle_keyboard_event()? {
             cli::Event::HandleKeyboard => {}
             cli::Event::UpdateDependencies => {
-                state
-                    .selected_dependencies()
-                    .apply_versions(cargo_toml, args)?;
+                state.selected_dependencies().apply_versions(args)?;
                 break;
             }
             cli::Event::Exit => {

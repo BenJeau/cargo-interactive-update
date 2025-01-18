@@ -1,0 +1,8 @@
+[package]
+edition = "2021"
+name = "realistic-tests"
+version = "0.1.0"
+
+[dependencies]
+rexpect = "0.6.0"
+toml_edit = "0.22.22"

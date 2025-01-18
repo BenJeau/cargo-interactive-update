@@ -23,7 +23,7 @@ cargo interactive-update
 
 It will then parse the `Cargo.toml` file to get the direct dependencies and check them via the crates.io API.
 
-It extracts dependencies from the `dependencies`, `dev-dependencies`, `build-dependencies` and `workspace-dependencies` sections and updates only the related sections.
+It extracts dependencies from the `dependencies`, `dev-dependencies`, `build-dependencies` and `workspace.dependencies` sections and updates only the related sections.
 
 If there are outdated dependencies, it will display them and let you select which ones to update, similar to the following:
 
@@ -68,6 +68,20 @@ or using the long form:
 
 ```bash
 cargo interactive-update --all --yes
+```
+
+## Development
+
+After cloning the repository, you can install the extension locally with the following command:
+
+```bash
+cargo install --path .
+```
+
+Afterwards, you can run the extension with the following command:
+
+```bash
+cargo interactive-update
 ```
 
 ## License
