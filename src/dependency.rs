@@ -4,7 +4,7 @@ use toml_edit::{value, DocumentMut, Item, Value};
 
 use crate::args::Args;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Default)]
 pub struct Dependency {
     pub name: String,
     pub current_version: String,
@@ -36,8 +36,9 @@ impl PartialOrd for Dependency {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum DependencyKind {
+    #[default]
     Normal,
     Dev,
     Build,

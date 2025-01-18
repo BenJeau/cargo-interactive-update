@@ -240,11 +240,11 @@ impl State {
         let bullet = if self.selected[i] { "●" } else { "○" };
 
         let latest_version_date = get_date_from_datetime_string(latest_version_date.as_deref())
-            .unwrap_or("none")
+            .unwrap_or("          ")
             .italic()
             .dim();
         let current_version_date = get_date_from_datetime_string(current_version_date.as_deref())
-            .unwrap_or("none")
+            .unwrap_or("          ")
             .italic()
             .dim();
 
@@ -299,5 +299,70 @@ fn get_dependencies_subsection_title(kind: DependencyKind) -> &'static str {
         DependencyKind::Dev => "Dev dependencies",
         DependencyKind::Build => "Build dependencies",
         DependencyKind::Workspace => "Workspace dependencies",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_longest_attributes() {
+        let dependencies = Dependencies::new(
+            vec![
+                Dependency {
+                    name: "short".to_string(),
+                    current_version: "1".to_string(),
+                    latest_version: "2".to_string(),
+                    ..Default::default()
+                },
+                Dependency {
+                    name: "longer dependency name".to_string(),
+                    current_version: "1.2.11".to_string(),
+                    latest_version: "2.3.4".to_string(),
+                    package_name: Some("package_name".to_string()),
+                    ..Default::default()
+                },
+            ],
+            std::collections::HashMap::new(),
+        );
+        let longest = Longest::get_longest_attributes(&dependencies);
+        assert_eq!(longest.name, 22);
+        assert_eq!(longest.current_version, 6);
+        assert_eq!(longest.latest_version, 5);
+        assert_eq!(longest.package_name, 12);
+    }
+
+    #[test]
+    fn test_get_date_from_datetime_string() {
+        assert_eq!(
+            get_date_from_datetime_string(Some("2024-01-01T00:00:00Z")),
+            Some("2024-01-01")
+        );
+        assert_eq!(
+            get_date_from_datetime_string(Some("2024-01-0100:00:00Z")),
+            None
+        );
+        assert_eq!(get_date_from_datetime_string(None), None);
+    }
+
+    #[test]
+    fn test_get_dependencies_subsection_title() {
+        assert_eq!(
+            get_dependencies_subsection_title(DependencyKind::Normal),
+            "Dependencies"
+        );
+        assert_eq!(
+            get_dependencies_subsection_title(DependencyKind::Dev),
+            "Dev dependencies"
+        );
+        assert_eq!(
+            get_dependencies_subsection_title(DependencyKind::Build),
+            "Build dependencies"
+        );
+        assert_eq!(
+            get_dependencies_subsection_title(DependencyKind::Workspace),
+            "Workspace dependencies"
+        );
     }
 }

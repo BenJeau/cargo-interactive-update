@@ -7,7 +7,7 @@ use crate::{
     dependency::{Dependencies, Dependency, DependencyKind},
 };
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Default)]
 pub struct CargoDependency {
     pub name: String,
     pub version: String,
@@ -46,7 +46,7 @@ impl CargoDependency {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct CargoDependencies {
     pub cargo_toml: DocumentMut,
     package_name: String,
@@ -126,7 +126,10 @@ impl CargoDependencies {
 
 fn read_cargo_file(relative_path: &str) -> DocumentMut {
     let cargo_toml_content = std::fs::read_to_string(format!("{relative_path}/Cargo.toml"))
-        .expect("Unable to read Cargo.toml file");
+        .unwrap_or_else(|e| {
+            eprintln!("Unable to read Cargo.toml file: {}", e);
+            String::new()
+        });
 
     cargo_toml_content
         .parse()
@@ -161,14 +164,14 @@ fn get_cargo_dependencies(cargo_toml: &DocumentMut) -> Vec<CargoDependency> {
 }
 
 fn extract_dependencies_from_sections(
-    cargo_toml: Option<&Item>,
+    dependencies_section: Option<&Item>,
     kind: DependencyKind,
 ) -> Vec<CargoDependency> {
-    let Some(cargo_toml) = cargo_toml else {
+    let Some(dependencies_section) = dependencies_section else {
         return vec![];
     };
 
-    let Some(package_deps) = cargo_toml.as_table_like() else {
+    let Some(package_deps) = dependencies_section.as_table_like() else {
         return vec![];
     };
 
@@ -222,4 +225,172 @@ fn get_package_name(cargo_toml: &DocumentMut) -> String {
         .and_then(|i| i.as_str())
         .unwrap_or_default()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cargo_dependencies_len() {
+        let cargo_dependencies = CargoDependencies {
+            dependencies: vec![Default::default()],
+            workspace_members: HashMap::from_iter([(
+                "".to_string(),
+                Box::new(CargoDependencies {
+                    dependencies: vec![Default::default()],
+                    ..Default::default()
+                }),
+            )]),
+            ..Default::default()
+        };
+        assert_eq!(cargo_dependencies.len(), 2);
+    }
+
+    #[test]
+    fn test_get_cargo_dependencies() {
+        const CARGO_TOML: &str = r#"
+        [dependencies]
+        "dependencies" = "0.1.0"
+
+        [dev-dependencies]
+        "dev-dependencies" = "1.0.0"
+
+        [build-dependencies]
+        "build-dependencies" = "2.0.0"
+
+        [workspace.dependencies]
+        "workspace-dependencies" = "3.0.0"
+        "#;
+
+        let cargo_toml: DocumentMut = CARGO_TOML.parse().unwrap();
+        let dependencies = get_cargo_dependencies(&cargo_toml);
+        assert_eq!(dependencies.len(), 4);
+        assert!(dependencies.contains(&CargoDependency {
+            name: "dependencies".to_string(),
+            version: "0.1.0".to_string(),
+            kind: DependencyKind::Normal
+        }));
+        assert!(dependencies.contains(&CargoDependency {
+            name: "dev-dependencies".to_string(),
+            version: "1.0.0".to_string(),
+            kind: DependencyKind::Dev
+        }));
+        assert!(dependencies.contains(&CargoDependency {
+            name: "build-dependencies".to_string(),
+            version: "2.0.0".to_string(),
+            kind: DependencyKind::Build
+        }));
+        assert!(dependencies.contains(&CargoDependency {
+            name: "workspace-dependencies".to_string(),
+            version: "3.0.0".to_string(),
+            kind: DependencyKind::Workspace
+        }));
+    }
+
+    #[test]
+    fn test_extract_dependencies_from_sections() {
+        const CARGO_TOML: &str = r#"
+        [dependencies]
+        "cargo-outdated" = "0.1.0"
+        "other-dependency" = { version = "1.0.0" }
+        "random-dependency" = { version = "2.0.0", name = "other-name" }
+        "invalid-dependency" = 123
+
+        [dependencies.serde]
+        version = "1.0.0"
+        "#;
+
+        let cargo_toml: DocumentMut = CARGO_TOML.parse().unwrap();
+        let dependencies = extract_dependencies_from_sections(
+            cargo_toml.get("dependencies"),
+            DependencyKind::Normal,
+        );
+        assert_eq!(dependencies.len(), 4);
+        assert!(dependencies.contains(&CargoDependency {
+            name: "cargo-outdated".to_string(),
+            version: "0.1.0".to_string(),
+            kind: DependencyKind::Normal
+        }));
+        assert!(dependencies.contains(&CargoDependency {
+            name: "other-dependency".to_string(),
+            version: "1.0.0".to_string(),
+            kind: DependencyKind::Normal
+        }));
+        // assert!(dependencies.contains(&CargoDependency {
+        //     name: "other-name".to_string(),
+        //     version: "2.0.0".to_string(),
+        //     kind: DependencyKind::Normal
+        // }));
+        assert!(dependencies.contains(&CargoDependency {
+            name: "serde".to_string(),
+            version: "1.0.0".to_string(),
+            kind: DependencyKind::Normal
+        }));
+    }
+
+    #[test]
+    fn test_extract_dependencies_with_none_dependencies_section() {
+        let dependencies = extract_dependencies_from_sections(None, DependencyKind::Normal);
+        assert_eq!(dependencies.len(), 0);
+    }
+
+    #[test]
+    fn test_extract_dependencies_with_dependencies_section_not_a_table() {
+        let dependencies = extract_dependencies_from_sections(
+            Some(&Item::Value(Value::from(false))),
+            DependencyKind::Normal,
+        );
+        assert_eq!(dependencies.len(), 0);
+    }
+
+    #[test]
+    fn test_get_workspace_members() {
+        const CARGO_TOML: &str = r#"
+        [workspace]
+        members = ["workspace-member-1", "workspace-member-2", 0]
+        "#;
+
+        let cargo_toml = CARGO_TOML.parse().unwrap();
+        let workspace_members = get_workspace_members(&cargo_toml);
+        assert_eq!(workspace_members.len(), 2);
+        assert!(workspace_members.contains_key("workspace-member-1"));
+        assert!(workspace_members.contains_key("workspace-member-2"));
+    }
+
+    #[test]
+    fn test_get_workspace_members_with_no_workspace() {
+        const CARGO_TOML: &str = r#"
+        [dependencies]
+        "cargo-outdated" = "0.1.0"
+        "#;
+
+        let cargo_toml = CARGO_TOML.parse().unwrap();
+        let workspace_members = get_workspace_members(&cargo_toml);
+        assert_eq!(workspace_members.len(), 0);
+    }
+
+    #[test]
+    fn test_get_package_name_with_no_package() {
+        const CARGO_TOML: &str = r#"
+        [dependencies]
+        "cargo-outdated" = "0.1.0"
+        "#;
+
+        let cargo_toml = CARGO_TOML.parse().unwrap();
+        let package_name = get_package_name(&cargo_toml);
+        assert_eq!(package_name, "");
+    }
+
+    #[test]
+    fn test_get_package_name() {
+        const CARGO_TOML: &str = r#"
+        [package]
+        name = "cargo-outdated"
+        "#;
+
+        let cargo_toml = CARGO_TOML.parse().unwrap();
+        let package_name = get_package_name(&cargo_toml);
+        assert_eq!(package_name, "cargo-outdated");
+    }
 }
