@@ -1,0 +1,20 @@
+[workspace]
+members = ["first-package", "second-package"]
+
+[workspace.dependencies]
+base64 = "0.1.0"
+unicode-ident = "0.1.0"
+
+[package]
+edition = "2021"
+name = "multiple-packages"
+version = "0.1.0"
+
+[dependencies]
+base64 = "0.1.0"
+
+[dev-dependencies]
+unicode-ident = "1.0.0"
+
+[build-dependencies]
+rand_core = "0.1.0"

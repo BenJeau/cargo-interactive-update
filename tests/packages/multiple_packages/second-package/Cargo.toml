@@ -1,0 +1,8 @@
+[package]
+edition = "2021"
+name = "second-package"
+version = "0.1.0"
+
+[build-dependencies]
+base64 = { workspace = true }
+unicode-ident = "1.0.0"
