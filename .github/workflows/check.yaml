@@ -22,7 +22,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
       - name: Add clippy to the toolchain
         run: rustup component add clippy
       - name: Run cargo clippy
@@ -56,9 +56,29 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
       - name: Run cargo test
-        run: cargo test --all -- --nocapture
+        run: cargo test --bins -- --nocapture
+
+  test-realistic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Rust setup
+        run: rustup toolchain install stable --profile minimal
+      - name: Setup cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ./tests/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./tests/Cargo.lock') }}
+      - name: Run cargo test
+        run: cd tests && cargo run
 
   audit:
     runs-on: ubuntu-latest
@@ -99,7 +119,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
       - name: Run cargo check
         run: cargo check
 
