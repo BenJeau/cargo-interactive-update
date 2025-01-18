@@ -30,6 +30,7 @@ struct Longest {
     name: usize,
     current_version: usize,
     latest_version: usize,
+    package_name: usize,
 }
 
 impl Longest {
@@ -37,17 +38,20 @@ impl Longest {
         let mut name = 0;
         let mut current_version = 0;
         let mut latest_version = 0;
+        let mut package_name = 0;
 
         for dep in dependencies.iter() {
             name = name.max(dep.name.len());
             current_version = current_version.max(dep.current_version.len());
             latest_version = latest_version.max(dep.latest_version.len());
+            package_name = package_name.max(dep.package_name.as_ref().map_or(0, |s| s.len()));
         }
 
         Longest {
             name,
             current_version,
             latest_version,
+            package_name,
         }
     }
 }
@@ -115,14 +119,8 @@ impl State {
     }
 
     pub fn selected_dependencies(self) -> Dependencies {
-        Dependencies::new(
-            self.outdated_deps
-                .into_iter()
-                .zip(self.selected.iter())
-                .filter(|(_, s)| **s)
-                .map(|(d, _)| d)
-                .collect(),
-        )
+        self.outdated_deps
+            .filter_selected_dependencies(self.selected)
     }
 
     pub fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -229,6 +227,7 @@ impl State {
             description,
             latest_version_date,
             current_version_date,
+            package_name,
             ..
         }: &Dependency,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -241,20 +240,36 @@ impl State {
         let bullet = if self.selected[i] { "●" } else { "○" };
 
         let latest_version_date = get_date_from_datetime_string(latest_version_date.as_deref())
-            .unwrap_or("none")
+            .unwrap_or("          ")
             .italic()
             .dim();
         let current_version_date = get_date_from_datetime_string(current_version_date.as_deref())
-            .unwrap_or("none")
+            .unwrap_or("          ")
             .italic()
             .dim();
 
         let name = name.clone().bold();
         let repository = repository.as_deref().unwrap_or("none").underline_black();
         let description = description.as_deref().unwrap_or("").dim();
+        let package_name = if self.outdated_deps.has_workspace_members() {
+            let package_name = package_name.as_deref().unwrap_or("");
+            let package_name = if package_name.is_empty() {
+                "-".to_string()
+            } else {
+                package_name.to_string()
+            };
+
+            let package_name_spacing =
+                " ".repeat(self.longest_attributes.package_name - package_name.len());
+            format!("{package_name}{package_name_spacing}  ")
+                .blue()
+                .italic()
+        } else {
+            "".to_string().blue().italic()
+        };
 
         let row = format!(
-            "{bullet} {name}{name_spacing}  {current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  {repository} - {description}",
+            "{bullet} {name}{name_spacing}  {package_name}{current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  {repository} - {description}",
         );
 
         let colored_row = if i == self.cursor_location {
@@ -284,5 +299,70 @@ fn get_dependencies_subsection_title(kind: DependencyKind) -> &'static str {
         DependencyKind::Dev => "Dev dependencies",
         DependencyKind::Build => "Build dependencies",
         DependencyKind::Workspace => "Workspace dependencies",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_longest_attributes() {
+        let dependencies = Dependencies::new(
+            vec![
+                Dependency {
+                    name: "short".to_string(),
+                    current_version: "1".to_string(),
+                    latest_version: "2".to_string(),
+                    ..Default::default()
+                },
+                Dependency {
+                    name: "longer dependency name".to_string(),
+                    current_version: "1.2.11".to_string(),
+                    latest_version: "2.3.4".to_string(),
+                    package_name: Some("package_name".to_string()),
+                    ..Default::default()
+                },
+            ],
+            std::collections::HashMap::new(),
+        );
+        let longest = Longest::get_longest_attributes(&dependencies);
+        assert_eq!(longest.name, 22);
+        assert_eq!(longest.current_version, 6);
+        assert_eq!(longest.latest_version, 5);
+        assert_eq!(longest.package_name, 12);
+    }
+
+    #[test]
+    fn test_get_date_from_datetime_string() {
+        assert_eq!(
+            get_date_from_datetime_string(Some("2024-01-01T00:00:00Z")),
+            Some("2024-01-01")
+        );
+        assert_eq!(
+            get_date_from_datetime_string(Some("2024-01-0100:00:00Z")),
+            None
+        );
+        assert_eq!(get_date_from_datetime_string(None), None);
+    }
+
+    #[test]
+    fn test_get_dependencies_subsection_title() {
+        assert_eq!(
+            get_dependencies_subsection_title(DependencyKind::Normal),
+            "Dependencies"
+        );
+        assert_eq!(
+            get_dependencies_subsection_title(DependencyKind::Dev),
+            "Dev dependencies"
+        );
+        assert_eq!(
+            get_dependencies_subsection_title(DependencyKind::Build),
+            "Build dependencies"
+        );
+        assert_eq!(
+            get_dependencies_subsection_title(DependencyKind::Workspace),
+            "Workspace dependencies"
+        );
     }
 }

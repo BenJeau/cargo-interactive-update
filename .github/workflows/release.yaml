@@ -35,7 +35,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
       - name: Add clippy to the toolchain
         run: rustup component add clippy
       - name: Run cargo clippy
@@ -69,9 +69,32 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
       - name: Run cargo test
-        run: cargo test --all -- --nocapture
+        run: cargo test --bins -- --nocapture
+
+  test-realistic:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Rust setup
+        run: rustup toolchain install stable --profile minimal
+      - name: Setup cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ./target/
+            ./tests/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./tests/Cargo.lock') }}-${{ hashFiles('./Cargo.lock') }}
+      - name: Install cargo-interactive-update
+        run: cargo install --path .
+      - name: Run cargo test
+        run: cd tests && cargo run
 
   audit:
     runs-on: ubuntu-latest
@@ -112,7 +135,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
       - name: Run cargo check
         run: cargo check
 
@@ -125,7 +148,7 @@ jobs:
         uses: crate-ci/typos@v1.29.4
 
   prepare-release:
-    needs: [lint, format, test, check, typos]
+    needs: [lint, format, test, test-realistic, check, typos]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -161,7 +184,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
       - name: Update Cargo.toml version
         run: |
           sed -i -e 's/^version = .*/version = "${{ steps.bump-version.outputs.version }}"/' Cargo.toml
@@ -205,6 +228,6 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
       - name: Publish to crates.io
         run: cargo publish --token ${{ secrets.CARGO_TOKEN }} ${{ inputs.dry-run && '--dry-run' || '' }}

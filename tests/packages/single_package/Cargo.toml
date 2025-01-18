@@ -1,0 +1,13 @@
+[package]
+edition = "2021"
+name = "single_package"
+version = "0.1.0"
+
+[dependencies]
+base64 = "0.1.0"
+
+[dev-dependencies]
+unicode-ident = "1.0.0"
+
+[build-dependencies]
+rand_core = "0.1.0"

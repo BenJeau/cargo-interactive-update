@@ -9,10 +9,9 @@ mod dependency;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args::CargoCli::InteractiveUpdate(args) = args::CargoCli::parse();
 
-    let dependencies = cargo::CargoDependencies::gather_dependencies();
-    let outdated_deps = dependencies.retrieve_outdated_dependencies();
-
+    let dependencies = cargo::CargoDependencies::gather_dependencies(".");
     let total_deps = dependencies.len();
+    let outdated_deps = dependencies.retrieve_outdated_dependencies(None);
     let total_outdated_deps = outdated_deps.len();
 
     if total_outdated_deps == 0 {
@@ -25,9 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut state = cli::State::new(outdated_deps, total_deps, args.all);
 
     if args.yes {
-        state
-            .selected_dependencies()
-            .apply_versions(dependencies.cargo_toml, args)?;
+        state.selected_dependencies().apply_versions(args)?;
         return Ok(());
     }
 
@@ -39,9 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match state.handle_keyboard_event()? {
             cli::Event::HandleKeyboard => {}
             cli::Event::UpdateDependencies => {
-                state
-                    .selected_dependencies()
-                    .apply_versions(dependencies.cargo_toml, args)?;
+                state.selected_dependencies().apply_versions(args)?;
                 break;
             }
             cli::Event::Exit => {
