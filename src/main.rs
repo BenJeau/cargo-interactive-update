@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         termbg::theme(Duration::from_millis(500)).unwrap_or(termbg::Theme::Light)
     });
 
-    let dependencies = cargo::CargoDependencies::gather_dependencies(".");
+    let dependencies = cargo::CargoDependencies::gather_dependencies();
     let total_deps = dependencies.len();
     let outdated_deps = dependencies.retrieve_outdated_dependencies(None);
     let total_outdated_deps = outdated_deps.len();

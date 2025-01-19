@@ -10,6 +10,7 @@ keywords = ["cargo", "update", "interactive"]
 categories = ["command-line-utilities"]
 
 [dependencies]
+cargo-lock = "10.1.0"
 clap = { version = "4.5.20", features = ["derive"] }
 clap-cargo = "0.15.1"
 crossterm = { version = "0.28.1", default-features = false, features = ["events"] }

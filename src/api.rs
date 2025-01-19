@@ -34,10 +34,7 @@ fn get_field_from_versions(
     Some(
         versions?
             .iter()
-            .find(|v| {
-                v.get("num").and_then(|v| v.as_str()).unwrap_or("")
-                    == version.trim_start_matches(&['=', '^'])
-            })?
+            .find(|v| v.get("num").and_then(|v| v.as_str()).unwrap_or("") == version)?
             .get(key)?
             .as_str()?
             .trim()
@@ -156,12 +153,8 @@ mod tests {
     fn test_crates_io_empty_response() {
         let response = serde_json::json!({});
 
-        let response = CratesIoResponse::from_value(response, "0.1.0").unwrap();
+        let ret = CratesIoResponse::from_value(response, "0.1.0");
 
-        assert_eq!(response.repository, None);
-        assert_eq!(response.description, None);
-        assert_eq!(response.latest_version, "0.1.0");
-        assert_eq!(response.latest_version_date, None);
-        assert_eq!(response.current_version_date, None);
+        assert!(ret.is_none());
     }
 }
