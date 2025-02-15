@@ -88,13 +88,11 @@ pub fn get_latest_version(
 
     {
         let mut transfer = handle.transfer();
-        transfer
-            .write_function(|data| {
-                body.extend_from_slice(data);
-                Ok(data.len())
-            })
-            .unwrap();
-        transfer.perform().unwrap();
+        transfer.write_function(|data| {
+            body.extend_from_slice(data);
+            Ok(data.len())
+        })?;
+        transfer.perform()?;
     }
 
     let response = if body.is_empty() {
