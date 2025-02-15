@@ -89,12 +89,12 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             ./target/
-            ./tests/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('./tests/Cargo.lock') }}-${{ hashFiles('./Cargo.lock') }}
+            ./test/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('./test/Cargo.lock') }}-${{ hashFiles('./Cargo.lock') }}
       - name: Install cargo-interactive-update
         run: cargo install --path .
       - name: Run cargo test
-        run: cd tests && cargo run
+        run: cd test && cargo run
 
   audit:
     runs-on: ubuntu-latest
