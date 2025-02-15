@@ -157,12 +157,10 @@ impl State {
         for i in 1..self.outdated_deps.len() {
             let index = if next {
                 (self.cursor_location + i) % self.outdated_deps.len()
+            } else if i > self.cursor_location {
+                self.outdated_deps.len() + self.cursor_location - i
             } else {
-                if i > self.cursor_location {
-                    self.outdated_deps.len() + self.cursor_location - i
-                } else {
-                    self.cursor_location - i
-                }
+                self.cursor_location - i
             };
             let curr_kind = self.outdated_deps.dependencies[index].kind;
             if curr_kind != cursor_kind {

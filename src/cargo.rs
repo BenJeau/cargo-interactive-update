@@ -218,15 +218,13 @@ fn extract_dependencies_from_sections(
                 Item::Value(Value::InlineTable(t)) => (
                     t.get("version")?.as_str()?.to_string(),
                     t.get("package")
-                        .map(|e| e.as_str())
-                        .flatten()
+                        .and_then(|e| e.as_str())
                         .map(|e| e.to_owned()),
                 ),
                 Item::Table(t) => (
                     t.get("version")?.as_str()?.to_string(),
                     t.get("package")
-                        .map(|e| e.as_str())
-                        .flatten()
+                        .and_then(|e| e.as_str())
                         .map(|e| e.to_owned()),
                 ),
                 _ => return None,
@@ -235,9 +233,9 @@ fn extract_dependencies_from_sections(
             let version_req =
                 VersionReq::parse(&version_req).expect("must be a valid version requirement");
 
-            let package_name = package.as_ref().map(|e| e.as_str()).unwrap_or(name);
+            let package_name = package.as_deref().unwrap_or(name);
 
-            let version = find_matching_package(&lockfile, package_name, &version_req)
+            let version = find_matching_package(lockfile, package_name, &version_req)
                 .version
                 .to_string();
 
