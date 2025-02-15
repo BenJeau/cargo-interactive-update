@@ -92,7 +92,7 @@ jobs:
             ./test/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('./test/Cargo.lock') }}-${{ hashFiles('./Cargo.lock') }}
       - name: Install cargo-interactive-update
-        run: cargo install --path .
+        run: cargo install --path . --force
       - name: Run cargo test
         run: cd test && cargo run
 
