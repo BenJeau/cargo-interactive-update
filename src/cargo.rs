@@ -58,14 +58,22 @@ pub struct CargoDependencies {
 
 impl CargoDependencies {
     pub fn gather_dependencies() -> Self {
-        Self::gather_dependencies_inner(".", &read_cargo_lock_file())
+        Self::gather_dependencies_inner(".", &read_cargo_lock_file(), true)
     }
 
-    fn gather_dependencies_inner(relative_path: &str, lockfile: &Lockfile) -> Self {
+    fn gather_dependencies_inner(
+        relative_path: &str,
+        lockfile: &Lockfile,
+        should_retrieve_workspace_members: bool,
+    ) -> Self {
         let cargo_toml = read_cargo_file(relative_path);
         let package_name = get_package_name(&cargo_toml);
         let dependencies = get_cargo_dependencies(&cargo_toml, lockfile);
-        let workspace_members = get_workspace_members(&cargo_toml, lockfile);
+        let workspace_members = if should_retrieve_workspace_members {
+            get_workspace_members(&cargo_toml, lockfile)
+        } else {
+            Default::default()
+        };
 
         Self {
             cargo_toml,
@@ -320,7 +328,7 @@ fn get_workspace_members(
             acc.insert(
                 member.to_string(),
                 Box::new(CargoDependencies::gather_dependencies_inner(
-                    member, lockfile,
+                    member, lockfile, false,
                 )),
             );
             acc

@@ -1,5 +1,5 @@
 [workspace]
-members = ["first-package", "second-package"]
+members = [".", "first-package", "second-package"]
 
 [workspace.dependencies]
 base64 = "0.1.0"
