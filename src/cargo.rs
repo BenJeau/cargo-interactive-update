@@ -1,5 +1,6 @@
 use cargo_lock::Lockfile;
 use semver::{Version, VersionReq};
+use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, env::current_dir};
 use toml_edit::{DocumentMut, Item, Value};
 
@@ -90,6 +91,7 @@ impl CargoDependencies {
         let mut direct_dependencies_threads = Vec::new();
         let mut workspace_member_threads = Vec::new();
         let mut cargo_toml_files = HashMap::new();
+        let active_requests = Arc::new(Mutex::new(0));
 
         cargo_toml_files.insert(
             workspace_path.clone().unwrap_or_else(|| ".".to_string()),
@@ -99,8 +101,25 @@ impl CargoDependencies {
             let dependency = dependency.clone();
             let package_name = self.package_name.to_string();
             let workspace_path = workspace_path.clone();
+            let active_requests = active_requests.clone();
+
             direct_dependencies_threads.push(std::thread::spawn(move || {
-                dependency.get_latest_version_wrapper(Some(package_name), workspace_path)
+                loop {
+                    let mut count = active_requests.lock().unwrap();
+                    if *count < 5 {
+                        *count += 1;
+                        break;
+                    }
+                    drop(count);
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+
+                let result =
+                    dependency.get_latest_version_wrapper(Some(package_name), workspace_path);
+
+                *active_requests.lock().unwrap() -= 1;
+
+                result
             }));
         }
 
