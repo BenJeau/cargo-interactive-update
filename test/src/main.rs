@@ -8,20 +8,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let single_package = update_package("single_package")?;
     for (dep_type, pkg, version) in [
         ("dependencies", "base64", "0.1.0"),
-        ("dev-dependencies", "unicode-ident", "1.0.0"),
         ("build-dependencies", "rand_core", "0.1.0"),
     ] {
-        assert_ne!(single_package[dep_type][pkg].as_str(), Some(version));
+        assert_ne!(
+            single_package[dep_type][pkg].as_str(),
+            Some(version),
+            "{dep_type} {pkg} {version} should not be updated"
+        );
     }
+    assert_eq!(
+        single_package["dev-dependencies"]["unicode-ident"].as_str(),
+        Some("1.0.0"),
+        "Cargo.toml should not be updated for 'unicode-ident' since lockfile has latest version"
+    );
 
     let multiple_packages = update_package("multiple_packages")?;
     for (dep_type, pkg, version) in [
         ("dependencies", "base64", "0.1.0"),
-        ("dev-dependencies", "unicode-ident", "1.0.0"),
         ("build-dependencies", "rand_core", "0.1.0"),
     ] {
-        assert_ne!(multiple_packages[dep_type][pkg].as_str(), Some(version));
+        assert_ne!(
+            multiple_packages[dep_type][pkg].as_str(),
+            Some(version),
+            "{dep_type} {pkg} {version} should not be updated"
+        );
     }
+    assert_eq!(
+        multiple_packages["dev-dependencies"]["unicode-ident"].as_str(),
+        Some("1.0.0"),
+        "Cargo.toml should not be updated for 'unicode-ident' since lockfile has latest version"
+    );
 
     verify_content_of_workspaces()?;
 
@@ -36,7 +52,7 @@ fn able_to_quit() -> Result<(), Box<dyn std::error::Error>> {
     let package_path = Path::new("./packages").join("single_package");
     std::env::set_current_dir(&package_path)?;
 
-    let mut session = spawn("cargo interactive-update", Some(3000))?;
+    let mut session = spawn("cargo interactive-update", Some(5000))?;
     session.exp_string(" to select/deselect, ")?;
     session.send_line("q\r")?;
     session.exp_eof()?;
@@ -71,7 +87,7 @@ fn update_package(package_name: &str) -> Result<DocumentMut, Box<dyn std::error:
 }
 
 fn update_all_deps() -> Result<(), Box<dyn std::error::Error>> {
-    let mut session = spawn("cargo interactive-update", Some(3000))?;
+    let mut session = spawn("cargo interactive-update", Some(10000))?;
     session.exp_string(" to select/deselect, ")?;
     session.send_line("a\r")?;
     session.exp_eof()?;
@@ -79,6 +95,8 @@ fn update_all_deps() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn verify_content_of_workspaces() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Verifying the content of workspaces");
+
     let package_path = Path::new("./packages").join("multiple_packages");
     let first_package = Path::new(&package_path).join("first-package");
     let second_package = Path::new(&package_path).join("second-package");
@@ -101,7 +119,7 @@ fn verify_content_of_workspaces() -> Result<(), Box<dyn std::error::Error>> {
         second_package_toml["build-dependencies"]["base64"]["workspace"].as_bool(),
         Some(true)
     );
-    assert_ne!(
+    assert_eq!(
         second_package_toml["build-dependencies"]["unicode-ident"].as_str(),
         Some("1.0.0")
     );

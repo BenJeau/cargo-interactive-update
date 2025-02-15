@@ -250,9 +250,11 @@ impl State {
             .count();
 
         queue!(self.stdout, MoveToNextLine(2))?;
-        let row = crossterm::cursor::position()
-            .expect("should return cursor position")
-            .1;
+        let row = if let Ok(position) = crossterm::cursor::position() {
+            position.1
+        } else {
+            0
+        };
 
         if !indices.is_empty() {
             queue!(
