@@ -12,8 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args::CargoCli::InteractiveUpdate(args) = args::CargoCli::parse();
 
     let theme = std::thread::spawn(|| {
-        termbg::theme(Duration::from_millis(500))
-            .unwrap_or(termbg::Theme::Light)
+        termbg::theme(Duration::from_millis(500)).unwrap_or(termbg::Theme::Light)
     });
 
     let dependencies = cargo::CargoDependencies::gather_dependencies();
