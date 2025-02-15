@@ -1,13 +1,14 @@
 use crossterm::{
-    cursor::{Hide, MoveTo, MoveToNextLine, Show},
+    cursor::{Hide, MoveTo, MoveToColumn, MoveToNextLine, Show},
     event::{self, KeyCode, KeyModifiers},
-    execute,
+    queue,
     style::{Print, PrintStyledContent, ResetColor, Stylize},
     terminal::{
         disable_raw_mode, enable_raw_mode, Clear, ClearType, DisableLineWrap, EnableLineWrap,
     },
 };
 use std::io::{stdout, Write};
+use termbg::Theme;
 
 use crate::dependency::{Dependencies, Dependency, DependencyKind};
 
@@ -18,6 +19,7 @@ pub struct State {
     outdated_deps: Dependencies,
     total_deps: usize,
     longest_attributes: Longest,
+    theme: termbg::Theme,
 }
 
 pub enum Event {
@@ -30,7 +32,7 @@ struct Longest {
     name: usize,
     current_version: usize,
     latest_version: usize,
-    package_name: usize,
+    workspace_member: usize,
 }
 
 impl Longest {
@@ -38,26 +40,32 @@ impl Longest {
         let mut name = 0;
         let mut current_version = 0;
         let mut latest_version = 0;
-        let mut package_name = 0;
+        let mut workspace_member = 0;
 
         for dep in dependencies.iter() {
             name = name.max(dep.name.len());
             current_version = current_version.max(dep.current_version.len());
             latest_version = latest_version.max(dep.latest_version.len());
-            package_name = package_name.max(dep.package_name.as_ref().map_or(0, |s| s.len()));
+            workspace_member =
+                workspace_member.max(dep.workspace_member.as_ref().map_or(0, |s| s.len()));
         }
 
         Longest {
             name,
             current_version,
             latest_version,
-            package_name,
+            workspace_member,
         }
     }
 }
 
 impl State {
-    pub fn new(outdated_deps: Dependencies, total_deps: usize, default_selected: bool) -> Self {
+    pub fn new(
+        outdated_deps: Dependencies,
+        total_deps: usize,
+        default_selected: bool,
+        theme: Theme,
+    ) -> Self {
         Self {
             stdout: stdout(),
             selected: vec![default_selected; outdated_deps.len()],
@@ -65,40 +73,69 @@ impl State {
             longest_attributes: Longest::get_longest_attributes(&outdated_deps),
             outdated_deps,
             total_deps,
+            theme,
         }
     }
 
     pub fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         enable_raw_mode()?;
-        execute!(self.stdout, Hide)?;
+        queue!(self.stdout, Hide, Clear(ClearType::All))?;
+
+        self.render_header()?;
+        self.render_dependencies(&[])?;
+        self.render_footer_actions()?;
+
+        self.stdout.flush()?;
         Ok(())
     }
 
     pub fn handle_keyboard_event(&mut self) -> Result<Event, Box<dyn std::error::Error>> {
         if let event::Event::Key(key) = event::read()? {
             match (key.code, key.modifiers) {
-                (KeyCode::Up | KeyCode::Left, _) => {
+                (KeyCode::Up | KeyCode::Char('k'), _) => {
+                    let prev_i = self.cursor_location;
                     self.cursor_location = if self.cursor_location == 0 {
                         self.outdated_deps.len() - 1
                     } else {
                         self.cursor_location - 1
                     };
+
+                    self.render_dependencies(&[prev_i, self.cursor_location])?;
                 }
-                (KeyCode::Down | KeyCode::Right, _) => {
+                (KeyCode::Down | KeyCode::Char('j'), _) => {
+                    let prev_i = self.cursor_location;
                     self.cursor_location = (self.cursor_location + 1) % self.outdated_deps.len();
+
+                    self.render_dependencies(&[prev_i, self.cursor_location])?;
+                }
+                (KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab, _) => {
+                    let prev_i = self.cursor_location;
+
+                    self.cursor_location = self.change_section(false);
+                    self.render_dependencies(&[prev_i, self.cursor_location])?;
+                }
+                (KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab, _) => {
+                    let prev_i = self.cursor_location;
+
+                    self.cursor_location = self.change_section(true);
+                    self.render_dependencies(&[prev_i, self.cursor_location])?;
                 }
                 (KeyCode::Char(' '), _) => {
                     self.selected[self.cursor_location] = !self.selected[self.cursor_location];
+                    self.render_dependencies(&[self.cursor_location])?;
                 }
                 (KeyCode::Enter, _) => {
                     self.reset_terminal()?;
                     return Ok(Event::UpdateDependencies);
                 }
                 (KeyCode::Char('a'), _) => {
-                    self.selected = vec![true; self.outdated_deps.len()];
+                    let all_selected = self.selected.iter().all(|s| *s);
+                    self.selected = vec![!all_selected; self.outdated_deps.len()];
+                    self.render_dependencies(&[])?;
                 }
                 (KeyCode::Char('i'), _) => {
                     self.selected = self.selected.iter().map(|s| !s).collect();
+                    self.render_dependencies(&[])?;
                 }
                 (KeyCode::Esc | KeyCode::Char('q'), _)
                 | (KeyCode::Char('c') | KeyCode::Char('z'), KeyModifiers::CONTROL) => {
@@ -109,11 +146,40 @@ impl State {
             }
         }
 
+        self.stdout.flush()?;
         Ok(Event::HandleKeyboard)
     }
 
+    fn change_section(&mut self, next: bool) -> usize {
+        let cursor_kind = self.outdated_deps.dependencies[self.cursor_location].kind;
+        let mut other_kind = None;
+        let mut other_index = self.cursor_location;
+        for i in 1..self.outdated_deps.len() {
+            let index = if next {
+                (self.cursor_location + i) % self.outdated_deps.len()
+            } else if i > self.cursor_location {
+                self.outdated_deps.len() + self.cursor_location - i
+            } else {
+                self.cursor_location - i
+            };
+            let curr_kind = self.outdated_deps.dependencies[index].kind;
+            if curr_kind != cursor_kind {
+                if other_kind.is_none() {
+                    other_kind = Some(curr_kind);
+                    other_index = index;
+                } else {
+                    other_index = index;
+                }
+            }
+            if other_kind.is_some() && (next || other_kind != Some(curr_kind)) {
+                break;
+            }
+        }
+        other_index
+    }
+
     fn reset_terminal(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        execute!(self.stdout, Show, ResetColor)?;
+        queue!(self.stdout, Show, ResetColor)?;
         disable_raw_mode()?;
         Ok(())
     }
@@ -123,19 +189,9 @@ impl State {
             .filter_selected_dependencies(self.selected)
     }
 
-    pub fn render(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.render_header()?;
-        self.render_dependencies()?;
-        self.render_footer_actions()?;
-
-        self.stdout.flush()?;
-        Ok(())
-    }
-
     fn render_header(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        execute!(
+        queue!(
             self.stdout,
-            Clear(ClearType::All),
             MoveTo(0, 0),
             Print(format!(
                 "{} out of the {} direct dependencies are outdated.",
@@ -147,30 +203,38 @@ impl State {
         Ok(())
     }
 
-    fn render_dependencies(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    // parameter takes a specific indices to re-render
+    // if indices is empty, then re-render the entire list
+    fn render_dependencies(&mut self, indices: &[usize]) -> Result<(), Box<dyn std::error::Error>> {
         let mut offset = 0;
 
-        execute!(self.stdout, DisableLineWrap)?;
+        queue!(self.stdout, DisableLineWrap)?;
+        queue!(self.stdout, MoveTo(0, 0))?;
 
         for kind in DependencyKind::ordered() {
-            offset += self.render_dependencies_subsection(kind, offset)?;
+            offset += self.render_dependencies_subsection(kind, offset, indices)?;
         }
 
-        execute!(self.stdout, EnableLineWrap)?;
+        queue!(self.stdout, EnableLineWrap)?;
 
         Ok(())
     }
 
+    // Renders dependencies of a section
+    // Returns length of dependencies in the section
     fn render_dependencies_subsection(
         &mut self,
         kind: DependencyKind,
         offset: usize,
+        indices: &[usize],
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let deps = self
             .outdated_deps
             .iter()
-            .filter(|dep| dep.kind == kind)
-            .cloned()
+            .enumerate()
+            .skip(offset)
+            .take_while(|(_, dep)| dep.kind == kind)
+            .map(|(i, _)| i)
             .collect::<Vec<_>>();
 
         if deps.is_empty() {
@@ -185,27 +249,59 @@ impl State {
             .filter(|(selected, dep)| **selected && dep.kind == kind)
             .count();
 
-        execute!(
-            self.stdout,
-            MoveToNextLine(1),
-            PrintStyledContent(format!("{title} ({num_selected} selected):").cyan()),
-            MoveToNextLine(1)
-        )?;
+        queue!(self.stdout, MoveToNextLine(2))?;
+        let row = if let Ok(position) = crossterm::cursor::position() {
+            position.1
+        } else {
+            0
+        };
 
-        for (i, dependency) in deps.iter().enumerate() {
-            self.render_dependency(i + offset, dependency)?;
+        if !indices.is_empty() {
+            queue!(
+                self.stdout,
+                MoveToColumn(title.len() as u16 + 2),
+                Clear(ClearType::UntilNewLine),
+                PrintStyledContent(format!("{num_selected} selected):").cyan()),
+                MoveToNextLine(1)
+            )?;
+
+            for &i in indices {
+                if offset <= i && i < offset + deps.len() {
+                    queue!(
+                        self.stdout,
+                        MoveTo(0, row - offset as u16 + 1 + i as u16),
+                        Clear(ClearType::CurrentLine)
+                    )?;
+                    self.render_dependency(i)?;
+                }
+            }
+        } else {
+            queue!(
+                self.stdout,
+                MoveToColumn(0),
+                Clear(ClearType::CurrentLine),
+                PrintStyledContent(format!("{title} ({num_selected} selected):").cyan()),
+                MoveToNextLine(1)
+            )?;
+
+            for i in &deps {
+                queue!(self.stdout, Clear(ClearType::CurrentLine))?;
+                self.render_dependency(*i)?;
+            }
         }
+
+        queue!(self.stdout, MoveTo(0, row + deps.len() as u16))?;
 
         Ok(deps.len())
     }
 
     fn render_footer_actions(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        execute!(
+        queue!(
             self.stdout,
             MoveToNextLine(2),
             Print(format!(
                 "Use {} to navigate, {} to select all, {} to invert, {} to select/deselect, {} to update, {}/{} to exit",
-                "arrow keys".cyan(),
+                "arrow keys/hjkl".cyan(),
                 "<a>".cyan(),
                 "<i>".cyan(),
                 "<space>".cyan(),
@@ -216,10 +312,8 @@ impl State {
         Ok(())
     }
 
-    fn render_dependency(
-        &mut self,
-        i: usize,
-        Dependency {
+    fn render_dependency(&mut self, i: usize) -> Result<(), Box<dyn std::error::Error>> {
+        let Dependency {
             name,
             current_version,
             latest_version,
@@ -227,10 +321,10 @@ impl State {
             description,
             latest_version_date,
             current_version_date,
-            package_name,
+            workspace_member,
             ..
-        }: &Dependency,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+        } = &self.outdated_deps.dependencies[i];
+
         let name_spacing = " ".repeat(self.longest_attributes.name - name.len());
         let current_version_spacing =
             " ".repeat(self.longest_attributes.current_version - current_version.len());
@@ -249,36 +343,52 @@ impl State {
             .dim();
 
         let name = name.clone().bold();
-        let repository = repository.as_deref().unwrap_or("none").underline_black();
+        let mut repository = repository.as_deref().unwrap_or("none").underline_black();
+        if self.theme == Theme::Dark {
+            repository = repository.underline_white();
+        }
+
         let description = description.as_deref().unwrap_or("").dim();
-        let package_name = if self.outdated_deps.has_workspace_members() {
-            let package_name = package_name.as_deref().unwrap_or("");
-            let package_name = if package_name.is_empty() {
+        let workspace_member = if self.outdated_deps.has_workspace_members() {
+            let workspace_member = workspace_member.as_deref().unwrap_or("");
+            let workspace_member = if workspace_member.is_empty() {
                 "-".to_string()
             } else {
-                package_name.to_string()
+                workspace_member.to_string()
             };
 
-            let package_name_spacing =
-                " ".repeat(self.longest_attributes.package_name - package_name.len());
-            format!("{package_name}{package_name_spacing}  ")
+            let workspace_member_spacing =
+                " ".repeat(self.longest_attributes.workspace_member - workspace_member.len());
+            format!("{workspace_member}{workspace_member_spacing}  ")
                 .blue()
                 .italic()
         } else {
             "".to_string().blue().italic()
         };
 
+        let mut current_version = current_version.clone().bold().black();
+        if self.theme == Theme::Dark {
+            current_version = current_version.white();
+        }
+
+        let mut latest_version = latest_version.clone().bold().black();
+        if self.theme == Theme::Dark {
+            latest_version = latest_version.white();
+        }
+
         let row = format!(
-            "{bullet} {name}{name_spacing}  {package_name}{current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  {repository} - {description}",
+            "{bullet} {name}{name_spacing}  {workspace_member}{current_version_date} {current_version}{current_version_spacing} -> {latest_version_date} {latest_version}{latest_version_spacing}  {repository} - {description}",
         );
 
         let colored_row = if i == self.cursor_location {
             row.green()
-        } else {
+        } else if self.theme == Theme::Light {
             row.black()
+        } else {
+            row.white()
         };
 
-        execute!(
+        queue!(
             self.stdout,
             PrintStyledContent(colored_row),
             MoveToNextLine(1),
@@ -320,7 +430,7 @@ mod tests {
                     name: "longer dependency name".to_string(),
                     current_version: "1.2.11".to_string(),
                     latest_version: "2.3.4".to_string(),
-                    package_name: Some("package_name".to_string()),
+                    workspace_member: Some("some_member".to_string()),
                     ..Default::default()
                 },
             ],
@@ -330,7 +440,7 @@ mod tests {
         assert_eq!(longest.name, 22);
         assert_eq!(longest.current_version, 6);
         assert_eq!(longest.latest_version, 5);
-        assert_eq!(longest.package_name, 12);
+        assert_eq!(longest.workspace_member, 11);
     }
 
     #[test]

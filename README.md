@@ -21,7 +21,7 @@ Run the cargo extension:
 cargo interactive-update
 ```
 
-It will then parse the `Cargo.toml` file to get the direct dependencies and check them via the crates.io API.
+It will then parse the `Cargo.toml` and `Cargo.lock` files to get the direct dependencies and check them via the crates.io API.
 
 It extracts dependencies from the `dependencies`, `dev-dependencies`, `build-dependencies` and `workspace.dependencies` sections and updates only the related sections.
 
@@ -45,8 +45,7 @@ Build dependencies (0 selected):
 Workspace dependencies (1 selected):
 ● tonic        2022-11-28 0.8.3   -> 2024-09-26 0.12.3   https://github.com/hyperium/tonic - A gRPC over HTTP/2 implementation focused on high performanc
 
-
-Use arrow keys to navigate, <a> to select all, <i> to invert, <space> to select/deselect, <enter> to update, <esc>/<q> to exit
+Use arrow keys/hjkl to navigate, <a> to select all, <i> to invert, <space> to select/deselect, <enter> to update, <esc>/<q> to exit
 ```
 
 After selecting the dependencies to update, it will run update the `Cargo.toml` file and run `cargo check` if you haven't disabled it via the `--no-check` flag.

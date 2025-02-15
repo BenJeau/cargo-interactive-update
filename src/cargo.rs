@@ -1,5 +1,6 @@
-use semver::Version;
-use std::collections::HashMap;
+use cargo_lock::Lockfile;
+use semver::{Version, VersionReq};
+use std::{collections::HashMap, env::current_dir};
 use toml_edit::{DocumentMut, Item, Value};
 
 use crate::{
@@ -7,27 +8,28 @@ use crate::{
     dependency::{Dependencies, Dependency, DependencyKind},
 };
 
-#[derive(Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CargoDependency {
     pub name: String,
     pub version: String,
+    pub package: Option<String>,
     pub kind: DependencyKind,
 }
 
 impl CargoDependency {
     fn get_latest_version_wrapper(
         &self,
-        package_name: Option<String>,
+        workspace_member: Option<String>,
         workspace_path: Option<String>,
     ) -> Option<Dependency> {
-        let parsed_current_version = Version::parse(&self.version).ok()?;
+        let parsed_current_version_req = VersionReq::parse(&self.version).ok()?;
 
-        let response = api::get_latest_version(self).expect("Unable to reach crates.io");
+        let response = api::get_latest_version(self).expect("Unable to reach crates.io")?;
 
         let parsed_latest_version =
             Version::parse(&response.latest_version).expect("Latest version is not a valid semver");
 
-        if parsed_current_version < parsed_latest_version {
+        if !parsed_current_version_req.matches(&parsed_latest_version) {
             Some(Dependency {
                 name: self.name.to_string(),
                 current_version: self.version.to_string(),
@@ -37,7 +39,7 @@ impl CargoDependency {
                 current_version_date: response.current_version_date,
                 description: response.description,
                 kind: self.kind,
-                package_name,
+                workspace_member,
                 workspace_path,
             })
         } else {
@@ -46,7 +48,7 @@ impl CargoDependency {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CargoDependencies {
     pub cargo_toml: DocumentMut,
     package_name: String,
@@ -55,11 +57,15 @@ pub struct CargoDependencies {
 }
 
 impl CargoDependencies {
-    pub fn gather_dependencies(relative_path: &str) -> Self {
+    pub fn gather_dependencies() -> Self {
+        Self::gather_dependencies_inner(".", &read_cargo_lock_file())
+    }
+
+    fn gather_dependencies_inner(relative_path: &str, lockfile: &Lockfile) -> Self {
         let cargo_toml = read_cargo_file(relative_path);
         let package_name = get_package_name(&cargo_toml);
-        let dependencies = get_cargo_dependencies(&cargo_toml);
-        let workspace_members = get_workspace_members(&cargo_toml);
+        let dependencies = get_cargo_dependencies(&cargo_toml, lockfile);
+        let workspace_members = get_workspace_members(&cargo_toml, lockfile);
 
         Self {
             cargo_toml,
@@ -136,16 +142,23 @@ fn read_cargo_file(relative_path: &str) -> DocumentMut {
         .expect("Unable to parse Cargo.toml file as TOML")
 }
 
-fn get_cargo_dependencies(cargo_toml: &DocumentMut) -> Vec<CargoDependency> {
-    let dependencies =
-        extract_dependencies_from_sections(cargo_toml.get("dependencies"), DependencyKind::Normal);
+fn get_cargo_dependencies(cargo_toml: &DocumentMut, lockfile: &Lockfile) -> Vec<CargoDependency> {
+    let dependencies = extract_dependencies_from_sections(
+        cargo_toml.get("dependencies"),
+        DependencyKind::Normal,
+        lockfile,
+    );
 
-    let dev_dependencies =
-        extract_dependencies_from_sections(cargo_toml.get("dev-dependencies"), DependencyKind::Dev);
+    let dev_dependencies = extract_dependencies_from_sections(
+        cargo_toml.get("dev-dependencies"),
+        DependencyKind::Dev,
+        lockfile,
+    );
 
     let build_dependencies = extract_dependencies_from_sections(
         cargo_toml.get("build-dependencies"),
         DependencyKind::Build,
+        lockfile,
     );
 
     let workspace_dependencies = extract_dependencies_from_sections(
@@ -153,6 +166,7 @@ fn get_cargo_dependencies(cargo_toml: &DocumentMut) -> Vec<CargoDependency> {
             .get("workspace")
             .and_then(|w| w.get("dependencies")),
         DependencyKind::Workspace,
+        lockfile,
     );
 
     dependencies
@@ -163,9 +177,30 @@ fn get_cargo_dependencies(cargo_toml: &DocumentMut) -> Vec<CargoDependency> {
         .collect()
 }
 
+fn read_cargo_lock_file() -> Lockfile {
+    let mut dir = current_dir().unwrap();
+
+    // try recursing parents 7 times to find lockfile
+    for _ in 0..7 {
+        let path = dir.join("Cargo.lock");
+
+        if let Ok(lockfile) = Lockfile::load(path) {
+            return lockfile;
+        }
+        dir = if let Some(parent) = dir.parent() {
+            parent.to_path_buf()
+        } else {
+            panic!("Unable to read Cargo.lock file");
+        };
+    }
+
+    panic!("Unable to read Cargo.lock file");
+}
+
 fn extract_dependencies_from_sections(
     dependencies_section: Option<&Item>,
     kind: DependencyKind,
+    lockfile: &Lockfile,
 ) -> Vec<CargoDependency> {
     let Some(dependencies_section) = dependencies_section else {
         return vec![];
@@ -178,15 +213,35 @@ fn extract_dependencies_from_sections(
     package_deps
         .iter()
         .flat_map(|(name, package_data)| {
-            let version = match package_data {
-                Item::Value(Value::String(v)) => v.value().to_string(),
-                Item::Value(Value::InlineTable(t)) => t.get("version")?.as_str()?.to_string(),
-                Item::Table(t) => t.get("version")?.as_str()?.to_string(),
+            let (version_req, package) = match package_data {
+                Item::Value(Value::String(v)) => (v.value().to_string(), None),
+                Item::Value(Value::InlineTable(t)) => (
+                    t.get("version")?.as_str()?.to_string(),
+                    t.get("package")
+                        .and_then(|e| e.as_str())
+                        .map(|e| e.to_owned()),
+                ),
+                Item::Table(t) => (
+                    t.get("version")?.as_str()?.to_string(),
+                    t.get("package")
+                        .and_then(|e| e.as_str())
+                        .map(|e| e.to_owned()),
+                ),
                 _ => return None,
             };
 
+            let version_req =
+                VersionReq::parse(&version_req).expect("must be a valid version requirement");
+
+            let package_name = package.as_deref().unwrap_or(name);
+
+            let version = find_matching_package(lockfile, package_name, &version_req)
+                .version
+                .to_string();
+
             Some(CargoDependency {
-                name: name.to_string(),
+                name: name.to_owned(),
+                package,
                 version,
                 kind,
             })
@@ -194,7 +249,59 @@ fn extract_dependencies_from_sections(
         .collect()
 }
 
-fn get_workspace_members(cargo_toml: &DocumentMut) -> HashMap<String, Box<CargoDependencies>> {
+fn find_matching_package<'a>(
+    lockfile: &'a Lockfile,
+    package_name: &str,
+    req: &VersionReq,
+) -> &'a cargo_lock::Package {
+    let packages = &lockfile.packages;
+
+    // index of the package instance
+    let Ok(i) = packages.binary_search_by_key(&package_name, |p| p.name.as_str()) else {
+        panic!(
+            "unable to find matching crate '{package_name} = \"{}\"' in Cargo.lock",
+            req
+        );
+    };
+
+    let package = &packages[i];
+    if req.matches(&package.version) {
+        return package;
+    }
+
+    // search through packages around the found index
+    // to find the crate of matching version
+    if i + 1 < packages.len() {
+        let package_ = packages[i + 1..]
+            .iter()
+            .take_while(|p| p.name.as_str() == package_name)
+            .find(|p| req.matches(&p.version));
+        if let Some(package) = package_ {
+            return package;
+        }
+    }
+
+    if i > 0 {
+        let package_ = packages[..i]
+            .iter()
+            .rev()
+            .take_while(|p| p.name.as_str() == package_name)
+            .find(|p| req.matches(&p.version));
+        if let Some(package) = package_ {
+            return package;
+        }
+    }
+
+    panic!(
+        "unable to find matching crate '{package_name} = \"{}\"' in Cargo.lock",
+        req
+    );
+}
+
+fn get_workspace_members(
+    cargo_toml: &DocumentMut,
+    lockfile: &Lockfile,
+) -> HashMap<String, Box<CargoDependencies>> {
     let Some(workspace_members) = cargo_toml
         .get("workspace")
         .and_then(|i| i.get("members"))
@@ -212,7 +319,9 @@ fn get_workspace_members(cargo_toml: &DocumentMut) -> HashMap<String, Box<CargoD
 
             acc.insert(
                 member.to_string(),
-                Box::new(CargoDependencies::gather_dependencies(member)),
+                Box::new(CargoDependencies::gather_dependencies_inner(
+                    member, lockfile,
+                )),
             );
             acc
         })
@@ -229,6 +338,8 @@ fn get_package_name(cargo_toml: &DocumentMut) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     #[test]
@@ -251,38 +362,63 @@ mod tests {
     fn test_get_cargo_dependencies() {
         const CARGO_TOML: &str = r#"
         [dependencies]
-        "dependencies" = "0.1.0"
+        "dependencies" = "^0.1.0"
 
         [dev-dependencies]
-        "dev-dependencies" = "1.0.0"
+        "dev-dependencies" = "=1.0.0"
 
         [build-dependencies]
-        "build-dependencies" = "2.0.0"
+        "build-dependencies" = "^2.0.0"
 
         [workspace.dependencies]
-        "workspace-dependencies" = "3.0.0"
+        "workspace-dependencies" = "^3.0.0"
+        "#;
+
+        const CARGO_LOCK: &str = r#"
+        version = 4
+
+        [[package]]
+        name = "build-dependencies"
+        version = "2.1.0"
+
+        [[package]]
+        name = "dependencies"
+        version = "0.1.2"
+
+        [[package]]
+        name = "dev-dependencies"
+        version = "1.0.0"
+
+        [[package]]
+        name = "workspace-dependencies"
+        version = "3.0.0"
         "#;
 
         let cargo_toml: DocumentMut = CARGO_TOML.parse().unwrap();
-        let dependencies = get_cargo_dependencies(&cargo_toml);
+        let lockfile = Lockfile::from_str(CARGO_LOCK).unwrap();
+        let dependencies = get_cargo_dependencies(&cargo_toml, &lockfile);
         assert_eq!(dependencies.len(), 4);
         assert!(dependencies.contains(&CargoDependency {
             name: "dependencies".to_string(),
-            version: "0.1.0".to_string(),
+            package: None,
+            version: "0.1.2".to_string(),
             kind: DependencyKind::Normal
         }));
         assert!(dependencies.contains(&CargoDependency {
             name: "dev-dependencies".to_string(),
+            package: None,
             version: "1.0.0".to_string(),
             kind: DependencyKind::Dev
         }));
         assert!(dependencies.contains(&CargoDependency {
             name: "build-dependencies".to_string(),
-            version: "2.0.0".to_string(),
+            package: None,
+            version: "2.1.0".to_string(),
             kind: DependencyKind::Build
         }));
         assert!(dependencies.contains(&CargoDependency {
             name: "workspace-dependencies".to_string(),
+            package: None,
             version: "3.0.0".to_string(),
             kind: DependencyKind::Workspace
         }));
@@ -294,36 +430,64 @@ mod tests {
         [dependencies]
         "cargo-outdated" = "0.1.0"
         "other-dependency" = { version = "1.0.0" }
-        "random-dependency" = { version = "2.0.0", name = "other-name" }
+        "random-dependency" = { version = "2.0.0", package = "other-name" }
         "invalid-dependency" = 123
 
         [dependencies.serde]
         version = "1.0.0"
         "#;
 
+        const CARGO_LOCK: &str = r#"
+        version = 4
+
+        [[package]]
+        name = "cargo-outdated"
+        version = "0.1.0"
+
+        [[package]]
+        name = "other-dependency"
+        version = "1.0.0"
+
+        [[package]]
+        name = "other-name"
+        version = "2.0.0"
+
+        [[package]]
+        name = "serde"
+        version = "1.0.0"
+        "#;
+
         let cargo_toml: DocumentMut = CARGO_TOML.parse().unwrap();
+        let lockfile = Lockfile::from_str(CARGO_LOCK).unwrap();
+
         let dependencies = extract_dependencies_from_sections(
             cargo_toml.get("dependencies"),
             DependencyKind::Normal,
+            &lockfile,
         );
+
         assert_eq!(dependencies.len(), 4);
         assert!(dependencies.contains(&CargoDependency {
             name: "cargo-outdated".to_string(),
+            package: None,
             version: "0.1.0".to_string(),
             kind: DependencyKind::Normal
         }));
         assert!(dependencies.contains(&CargoDependency {
             name: "other-dependency".to_string(),
+            package: None,
             version: "1.0.0".to_string(),
             kind: DependencyKind::Normal
         }));
-        // assert!(dependencies.contains(&CargoDependency {
-        //     name: "other-name".to_string(),
-        //     version: "2.0.0".to_string(),
-        //     kind: DependencyKind::Normal
-        // }));
+        assert!(dependencies.contains(&CargoDependency {
+            name: "random-dependency".to_string(),
+            package: Some("other-name".to_string()),
+            version: "2.0.0".to_string(),
+            kind: DependencyKind::Normal
+        }));
         assert!(dependencies.contains(&CargoDependency {
             name: "serde".to_string(),
+            package: None,
             version: "1.0.0".to_string(),
             kind: DependencyKind::Normal
         }));
@@ -331,15 +495,28 @@ mod tests {
 
     #[test]
     fn test_extract_dependencies_with_none_dependencies_section() {
-        let dependencies = extract_dependencies_from_sections(None, DependencyKind::Normal);
+        const CARGO_LOCK: &str = r#"
+        version = 4
+        "#;
+
+        let lockfile = Lockfile::from_str(CARGO_LOCK).unwrap();
+        let dependencies =
+            extract_dependencies_from_sections(None, DependencyKind::Normal, &lockfile);
         assert_eq!(dependencies.len(), 0);
     }
 
     #[test]
     fn test_extract_dependencies_with_dependencies_section_not_a_table() {
+        const CARGO_LOCK: &str = r#"
+        version = 4
+        "#;
+
+        let lockfile = Lockfile::from_str(CARGO_LOCK).unwrap();
+
         let dependencies = extract_dependencies_from_sections(
             Some(&Item::Value(Value::from(false))),
             DependencyKind::Normal,
+            &lockfile,
         );
         assert_eq!(dependencies.len(), 0);
     }
@@ -351,8 +528,14 @@ mod tests {
         members = ["workspace-member-1", "workspace-member-2", 0]
         "#;
 
+        const CARGO_LOCK: &str = r#"
+        version = 4
+        "#;
+
+        let lockfile = Lockfile::from_str(CARGO_LOCK).unwrap();
+
         let cargo_toml = CARGO_TOML.parse().unwrap();
-        let workspace_members = get_workspace_members(&cargo_toml);
+        let workspace_members = get_workspace_members(&cargo_toml, &lockfile);
         assert_eq!(workspace_members.len(), 2);
         assert!(workspace_members.contains_key("workspace-member-1"));
         assert!(workspace_members.contains_key("workspace-member-2"));
@@ -365,8 +548,17 @@ mod tests {
         "cargo-outdated" = "0.1.0"
         "#;
 
+        const CARGO_LOCK: &str = r#"
+        version = 4
+
+        [[package]]
+        name = "cargo-outdated"
+        version = "0.1.0"
+        "#;
+
         let cargo_toml = CARGO_TOML.parse().unwrap();
-        let workspace_members = get_workspace_members(&cargo_toml);
+        let lockfile = Lockfile::from_str(CARGO_LOCK).unwrap();
+        let workspace_members = get_workspace_members(&cargo_toml, &lockfile);
         assert_eq!(workspace_members.len(), 0);
     }
 

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use clap::Parser;
 
 mod api;
@@ -9,7 +11,11 @@ mod dependency;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args::CargoCli::InteractiveUpdate(args) = args::CargoCli::parse();
 
-    let dependencies = cargo::CargoDependencies::gather_dependencies(".");
+    let theme = std::thread::spawn(|| {
+        termbg::theme(Duration::from_millis(500)).unwrap_or(termbg::Theme::Light)
+    });
+
+    let dependencies = cargo::CargoDependencies::gather_dependencies();
     let total_deps = dependencies.len();
     let outdated_deps = dependencies.retrieve_outdated_dependencies(None);
     let total_outdated_deps = outdated_deps.len();
@@ -19,9 +25,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    println!("{total_outdated_deps} out of the {total_deps} direct dependencies are outdated.");
+    println!(
+        "{total_outdated_deps} out of the {total_deps} direct dependencies \
+         are outdated."
+    );
 
-    let mut state = cli::State::new(outdated_deps, total_deps, args.all);
+    let mut state = cli::State::new(
+        outdated_deps,
+        total_deps,
+        args.all,
+        theme.join().unwrap_or(termbg::Theme::Light),
+    );
 
     if args.yes {
         state.selected_dependencies().apply_versions(args)?;
@@ -31,8 +45,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     state.start()?;
 
     loop {
-        state.render()?;
-
         match state.handle_keyboard_event()? {
             cli::Event::HandleKeyboard => {}
             cli::Event::UpdateDependencies => {
