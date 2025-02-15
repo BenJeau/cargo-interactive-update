@@ -26,12 +26,10 @@ impl CargoDependency {
         let parsed_current_version_req = VersionReq::parse(&self.version).ok()?;
 
         let response = api::get_latest_version(self)
-            .expect(&format!("Unable to reach crates.io for {}", self.name))?;
+            .unwrap_or_else(|_| panic!("Unable to reach crates.io for {}", self.name))?;
 
-        let parsed_latest_version = Version::parse(&response.latest_version).expect(&format!(
-            "Latest version is not a valid semver for {}",
-            self.name
-        ));
+        let parsed_latest_version = Version::parse(&response.latest_version)
+            .unwrap_or_else(|_| panic!("Latest version is not a valid semver for {}", self.name));
 
         if !parsed_current_version_req.matches(&parsed_latest_version) {
             Some(Dependency {
