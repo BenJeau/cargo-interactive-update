@@ -328,6 +328,10 @@ fn get_workspace_members(
                 return acc;
             };
 
+            if member == "." {
+                return acc;
+            }
+
             acc.insert(
                 member.to_string(),
                 Box::new(CargoDependencies::gather_dependencies_inner(
